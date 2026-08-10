@@ -1,0 +1,8 @@
+{
+  "venvPath": ".",
+  "venv": ".venv",
+  "include": ["database", "enums", "packets", "services", "utils", "config.py", "dispatcher.py", "frame_buffer.py", "logging_config.py", "main.py", "server.py"],
+  "exclude": ["**/__pycache__", ".venv", "tests"],
+  "typeCheckingMode": "standard",
+  "reportMissingTypeStubs": "none"
+}

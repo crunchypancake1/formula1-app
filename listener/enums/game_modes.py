@@ -1,0 +1,18 @@
+from enum import Enum
+
+
+class GameModeIDs(Enum):
+    NONE = 0
+    UNKNOWN = 255
+    GRAND_PRIX_23 = 4
+    TIME_TRIAL = 5
+    SPLITSCREEN = 6
+    ONLINE_CUSTOM = 7
+    ONLINE_WEEKLY_EVENT = 15
+    STORY_MODE = 17
+    MY_TEAM_CAREER_25 = 27
+    DRIVER_CAREER_25 = 28
+    CAREER_25_ONLINE = 29
+    CHALLENGE_CAREER_25 = 30
+    STORY_MODE_APXGP = 75
+    BENCHMARK = 127

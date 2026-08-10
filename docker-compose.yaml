@@ -1,0 +1,50 @@
+services:
+  postgres:
+    image: timescale/timescaledb:latest-pg16
+    container_name: f1_postgres
+    ports:
+      - "7005:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init_databases.sh:/docker-entrypoint-initdb.d/init_databases.sh
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  listener:
+    build:
+      context: .
+      dockerfile: listener/Dockerfile
+    container_name: f1_listener
+    ports:
+      - "9999:20777/udp"
+    environment:
+      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-f1_app}
+      POSTGRES_POOL_MIN: ${POSTGRES_POOL_MIN:-2}
+      POSTGRES_POOL_MAX: ${POSTGRES_POOL_MAX:-10}
+      LISTEN_IP: ${LISTEN_IP:-0.0.0.0}
+      LISTEN_PORT: ${LISTEN_PORT:-20777}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_PATH: ${LOG_PATH:-/var/log/f1-listener/listener.log}
+    volumes:
+      - listener_logs:/var/log/f1-listener
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: sh -c "python schema/run_schema.py && python -u main.py"
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  listener_logs:

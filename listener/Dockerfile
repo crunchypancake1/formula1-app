@@ -7,6 +7,7 @@ COPY listener/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY listener/ .
+COPY schema/ ./schema/
 
 RUN mkdir -p /var/log/f1-listener
 

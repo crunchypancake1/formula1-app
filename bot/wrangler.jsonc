@@ -1,0 +1,24 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "formula1-bot",
+  "main": "./src/index.ts",
+  "compatibility_date": "2026-08-08",
+  "compatibility_flags": ["nodejs_compat"],
+
+  "workers_dev": false,
+  "preview_urls": false,
+
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "ded8933c250e438cac3a2d76b2f97b5e",
+      "localConnectionString": "postgresql://postgres:changeme@localhost:7005/f1_app"
+    }
+  ],
+
+  "routes": [{ "pattern": "f1-bot.crunchypancake.com", "custom_domain": true }],
+
+  "observability": {
+    "logs": { "enabled": true, "invocation_logs": true }
+  }
+}

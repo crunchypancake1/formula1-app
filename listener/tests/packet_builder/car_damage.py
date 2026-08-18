@@ -2,10 +2,11 @@
 
 import struct
 
+from packets.constants import MAX_CARS
+
 from .header import build_header
 
 _CAR_DAMAGE_FORMAT = '<4f4B4B4B18B'
-_MAX_CARS = 22
 
 
 def build_car_damage_packet(
@@ -30,7 +31,7 @@ def build_car_damage_packet(
     )
 
     body = b''
-    for i in range(_MAX_CARS):
+    for i in range(MAX_CARS):
         if i < num_drivers:
             body += struct.pack(
                 _CAR_DAMAGE_FORMAT,

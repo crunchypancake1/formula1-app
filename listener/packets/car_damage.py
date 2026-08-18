@@ -1,6 +1,7 @@
 import struct
 from dataclasses import dataclass
 
+from .constants import MAX_CARS
 from .packet_header import PacketHeader
 
 # float[4] tyresWear, uint8[4] tyresDamage, uint8[4] brakesDamage,
@@ -43,7 +44,7 @@ class CarDamagePacket:
 
 def unpack_car_damage(packet_header: PacketHeader, data: bytes) -> CarDamagePacket:
     """Unpack Car Damage packet (Packet ID: 10). Extracts all per-car damage fields."""
-    car_data_bytes = data[:(_CAR_DAMAGE_FORMAT_SIZE * 22)]
+    car_data_bytes = data[:(_CAR_DAMAGE_FORMAT_SIZE * MAX_CARS)]
 
     car_list = []
     for f in struct.iter_unpack(_CAR_DAMAGE_FORMAT, car_data_bytes):

@@ -4,6 +4,7 @@ import logging
 from typing import Optional
 
 from database.repositories import LapPositionsRepository
+from packets.constants import MAX_CARS
 
 
 class LapPositionsService:
@@ -37,8 +38,8 @@ class LapPositionsService:
 
             # Build positions array indexed by position: positions[pos-1] = user_id
             # The game gives positions[car_index] = position, we invert to position -> user_id
-            positions_array = [0] * 22
-            for car_index in range(22):
+            positions_array = [0] * MAX_CARS
+            for car_index in range(MAX_CARS):
                 position = packet.positions[lap_index][car_index]
                 if position == 0:
                     continue

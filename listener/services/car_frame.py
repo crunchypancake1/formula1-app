@@ -15,6 +15,7 @@ from enums import (
     SurfaceType,
     VisualTyreCompound,
 )
+from packets.constants import MAX_CARS
 
 
 def _build_motion_fields(motion) -> tuple:
@@ -231,7 +232,7 @@ class CarFrameService:
 
         rows = []
         damage_rows = []
-        for car_index in range(22):
+        for car_index in range(MAX_CARS):
             user_id = user_map.get(car_index)
             if user_id is None:
                 continue

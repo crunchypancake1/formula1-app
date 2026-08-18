@@ -2,10 +2,11 @@
 
 import struct
 
+from packets.constants import MAX_CARS
+
 from .header import build_header
 
 _LAP_DATA_FORMAT = '<2LHBHBHBHB3f15B2HBfB'
-_MAX_CARS = 22
 
 
 def build_lap_data_packet(
@@ -28,10 +29,10 @@ def build_lap_data_packet(
     )
 
     if positions is None:
-        positions = list(range(1, num_drivers + 1)) + [0] * (_MAX_CARS - num_drivers)
+        positions = list(range(1, num_drivers + 1)) + [0] * (MAX_CARS - num_drivers)
 
     body = b''
-    for i in range(_MAX_CARS):
+    for i in range(MAX_CARS):
         if i < num_drivers:
             car_position = positions[i] if i < len(positions) else i + 1
             total_distance = (current_lap_num - 1) * track_length + lap_distance

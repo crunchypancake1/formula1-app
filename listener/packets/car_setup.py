@@ -1,6 +1,7 @@
 import struct
 from dataclasses import dataclass
 
+from .constants import MAX_CARS
 from .packet_header import PacketHeader
 
 # CarSetupData per car:
@@ -52,8 +53,8 @@ class CarSetupPacket:
 
 def unpack_car_setup(packet_header: PacketHeader, data: bytes) -> CarSetupPacket:
     """Unpack Car Setup packet (Packet ID: 5). 22 cars of setup data."""
-    car_data_bytes = data[:(_CAR_SETUP_FORMAT_SIZE * 22)]
-    remaining = data[(_CAR_SETUP_FORMAT_SIZE * 22):]
+    car_data_bytes = data[:(_CAR_SETUP_FORMAT_SIZE * MAX_CARS)]
+    remaining = data[(_CAR_SETUP_FORMAT_SIZE * MAX_CARS):]
 
     car_list = []
     for f in struct.iter_unpack(_CAR_SETUP_FORMAT, car_data_bytes):

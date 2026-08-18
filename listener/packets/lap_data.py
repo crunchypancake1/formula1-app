@@ -1,6 +1,7 @@
 import struct
 from dataclasses import dataclass
 
+from .constants import MAX_CARS
 from .packet_header import PacketHeader
 
 _LAP_DATA_FORMAT = '<2LHBHBHBHB3f15B2HBfB'
@@ -66,8 +67,8 @@ def unpack_lap_data(packet_header: PacketHeader, data: bytes) -> LapDataPacket:
     Returns:
         LapDataPacket with lap data for all cars
     """
-    lap_data_bytes = data[:(_LAP_DATA_FORMAT_SIZE * 22)]
-    remaining_bytes = data[(_LAP_DATA_FORMAT_SIZE * 22):]
+    lap_data_bytes = data[:(_LAP_DATA_FORMAT_SIZE * MAX_CARS)]
+    remaining_bytes = data[(_LAP_DATA_FORMAT_SIZE * MAX_CARS):]
 
     lap_data_list = []
 

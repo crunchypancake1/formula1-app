@@ -1,6 +1,7 @@
 import struct
 from dataclasses import dataclass
 
+from .constants import MAX_CARS
 from .packet_header import PacketHeader
 
 _MAX_TYRE_STINTS = 8
@@ -50,7 +51,7 @@ def unpack_final_classification(packet_header: PacketHeader, data: bytes) -> Fin
     uint8_size = struct.calcsize(uint8_format)
 
     # Car Index
-    num_cars = min(struct.unpack(uint8_format, data[:uint8_size])[0], 22)
+    num_cars = min(struct.unpack(uint8_format, data[:uint8_size])[0], MAX_CARS)
 
     # Tyre Sets
     final_classification_list_format_size = (_FINAL_CLASSIFICATION_FORMAT_SIZE * num_cars)

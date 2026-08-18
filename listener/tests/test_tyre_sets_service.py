@@ -75,3 +75,20 @@ def test_lap_complete_no_cache_noop():
     svc, repo = _make_service()
     svc.on_lap_complete(session_uid="123", user_id=100, car_index=0, lap_number=1)
     assert repo.call_count("insert_snapshot") == 0
+
+
+def test_all_zero_restricted_packet_produces_zero_rows():
+    """
+    Pin test (Part 4 Phase 1 services): a restricted (all-zero) tyre-set
+    packet has available != 1 for every slot, so this is already correct
+    by construction — no rows should ever be cached or written. Guards
+    against a future refactor silently breaking this.
+    """
+    svc, repo = _make_service()
+    all_zero_sets = [_make_tyre_set(available=0) for _ in range(20)]
+    packet = _make_tyre_sets_packet(car_idx=0, tyre_set_data=all_zero_sets)
+    svc.handle_tyre_sets_packet(packet, user_map={0: 100})
+    cached = svc._cached_sets.get(("123", 0))
+    assert cached == []
+    svc.on_lap_complete(session_uid="123", user_id=100, car_index=0, lap_number=1)
+    assert repo.call_count("insert_snapshot") == 0

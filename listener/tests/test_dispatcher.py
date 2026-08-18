@@ -5,6 +5,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import logging
 
 from dispatcher import PacketDispatcher
+from packets.packet_header import EXPECTED_BODY_SIZE
 from services import (
     CarFrameService,
     EventsService,
@@ -25,6 +26,7 @@ from .packet_builder import (
     build_participants_packet,
     build_session_packet,
 )
+from .packet_builder.header import build_header
 
 SESSION_UID = 1234567890
 _DRIVER_MAP = {i: 100 + i for i in range(20)}
@@ -260,6 +262,47 @@ class TestPacketTooShort:
         dispatcher.handle_packet(b'\x00' * 10)
         # Should not crash, no sessions created
         assert len(dispatcher._known_sessions._data) == 0
+
+
+class TestBodyLengthValidation:
+    """Task 7's dispatcher-level body-length guard (EXPECTED_BODY_SIZE)."""
+
+    def test_short_body_rejected(self):
+        """A body shorter than EXPECTED_BODY_SIZE[packet_id] is dropped —
+        packet_id=1 (Session, fixed-size, expected 897 bytes)."""
+        dispatcher, *_ = _make_dispatcher()
+        header = build_header(
+            packet_id=1,
+            session_uid=SESSION_UID,
+            session_time=1.0,
+            frame_identifier=1,
+            overall_frame_identifier=1,
+        )
+        short_body = b'\x00' * (EXPECTED_BODY_SIZE[1] - 1)
+        dispatcher.handle_packet(header + short_body)
+        assert str(SESSION_UID) not in dispatcher._known_sessions
+
+    def test_long_body_rejected(self):
+        """A body longer than EXPECTED_BODY_SIZE[packet_id] is dropped the
+        same way as a short one — packet_id=1 (Session, fixed-size)."""
+        dispatcher, *_ = _make_dispatcher()
+        header = build_header(
+            packet_id=1,
+            session_uid=SESSION_UID,
+            session_time=1.0,
+            frame_identifier=1,
+            overall_frame_identifier=1,
+        )
+        long_body = b'\x00' * (EXPECTED_BODY_SIZE[1] + 1)
+        dispatcher.handle_packet(header + long_body)
+        assert str(SESSION_UID) not in dispatcher._known_sessions
+
+    def test_correct_body_size_accepted(self):
+        """Sanity check: the exact expected body size for a real Session
+        packet is accepted (positive control for the two tests above)."""
+        dispatcher, *_ = _make_dispatcher()
+        _send_session(dispatcher)
+        assert str(SESSION_UID) in dispatcher._known_sessions
 
 
 class TestCarFramePacketsBuffered:

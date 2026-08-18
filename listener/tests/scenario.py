@@ -1,5 +1,7 @@
 """Race scenario generator — produces a full sequence of binary packets for a simulated 3-lap race."""
 
+from packets.constants import MAX_CARS
+
 from .packet_builder import (
     build_car_damage_packet,
     build_car_status_packet,
@@ -28,7 +30,7 @@ TRACK_ID = 11          # Monza
 SESSION_TYPE = 15      # Race
 TOTAL_LAPS = 3
 TRACK_LENGTH = 5793
-NUM_DRIVERS = 20
+NUM_DRIVERS = 24
 FRAME_INTERVAL = 0.016  # ~60Hz
 
 
@@ -235,7 +237,7 @@ def generate_race_scenario() -> list[bytes]:
 
     # === Lap positions (lap 1) ===
     frame_id, session_time = fc.next()
-    lap1_positions = {0: positions[:NUM_DRIVERS] + [0] * (22 - NUM_DRIVERS)}
+    lap1_positions = {0: positions[:NUM_DRIVERS] + [0] * (MAX_CARS - NUM_DRIVERS)}
     packets.append(build_lap_positions_packet(
         session_uid=SESSION_UID,
         session_time=session_time,
@@ -289,8 +291,8 @@ def generate_race_scenario() -> list[bytes]:
     # === Lap positions (lap 2) ===
     frame_id, session_time = fc.next()
     lap2_positions = {
-        0: positions[:NUM_DRIVERS] + [0] * (22 - NUM_DRIVERS),
-        1: swapped_positions[:NUM_DRIVERS] + [0] * (22 - NUM_DRIVERS),
+        0: positions[:NUM_DRIVERS] + [0] * (MAX_CARS - NUM_DRIVERS),
+        1: swapped_positions[:NUM_DRIVERS] + [0] * (MAX_CARS - NUM_DRIVERS),
     }
     packets.append(build_lap_positions_packet(
         session_uid=SESSION_UID,
@@ -343,9 +345,9 @@ def generate_race_scenario() -> list[bytes]:
     # === Final lap positions (lap 3) ===
     frame_id, session_time = fc.next()
     lap3_positions = {
-        0: positions[:NUM_DRIVERS] + [0] * (22 - NUM_DRIVERS),
-        1: swapped_positions[:NUM_DRIVERS] + [0] * (22 - NUM_DRIVERS),
-        2: swapped_positions[:NUM_DRIVERS] + [0] * (22 - NUM_DRIVERS),
+        0: positions[:NUM_DRIVERS] + [0] * (MAX_CARS - NUM_DRIVERS),
+        1: swapped_positions[:NUM_DRIVERS] + [0] * (MAX_CARS - NUM_DRIVERS),
+        2: swapped_positions[:NUM_DRIVERS] + [0] * (MAX_CARS - NUM_DRIVERS),
     }
     packets.append(build_lap_positions_packet(
         session_uid=SESSION_UID,

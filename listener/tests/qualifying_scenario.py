@@ -19,7 +19,7 @@ TRACK_ID = 11          # Monza
 SESSION_TYPE = 10      # Q1
 TOTAL_LAPS = 0         # Not lap-limited in qualifying
 TRACK_LENGTH = 5793
-NUM_DRIVERS = 20
+NUM_DRIVERS = 24
 FRAME_INTERVAL = 0.016
 
 

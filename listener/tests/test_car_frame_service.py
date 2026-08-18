@@ -292,6 +292,44 @@ def test_restricted_car_damage_row_is_skipped():
     assert rows[0][1] == 101
 
 
+def test_local_player_never_restricted_even_if_own_telemetry_restricted():
+    """
+    The local player's car is always fully visible regardless of their own
+    your_telemetry setting (Part 2.2). Upstream (ParticipantsService) already
+    excludes the player's own car_index from restricted_indices — this test
+    pins that at the CarFrameService boundary: even though the player's own
+    `your_telemetry` may be Restricted, as long as their car_index is absent
+    from restricted_indices they get both a fully-populated car_frame row
+    AND a fully-populated car_frame_damage row.
+    """
+    car_frame_repo = MockRepo()
+    car_frame_damage_repo = MockRepo()
+    svc = CarFrameService(car_frame_repo, car_frame_damage_repo)
+    svc.write_frame(
+        session_uid="123", session_time=10.0, overall_frame_identifier=1,
+        user_map={0: 100},
+        motion_data=_pad_list([_make_motion(0)]),
+        telemetry_data=_pad_list([_make_telemetry(0)]),
+        lap_data_list=_pad_list([_make_lap(0)]),
+        car_status_data=_pad_list([_make_status()]),
+        car_damage_data=_pad_list([_make_damage()]),
+        # restricted_indices does NOT include car 0 (the local player) —
+        # mirrors ParticipantsService always excluding player_car_index,
+        # even if that driver's own your_telemetry == 0 (Restricted).
+        restricted_indices=set(),
+        race_started=True,
+    )
+    args, _ = car_frame_repo.last_call("insert_batch")
+    row = args[0][0]
+    assert row[71] == 58  # front_brake_bias populated, not NULL
+    assert row[77] == 200000.0  # ers_harvest_limit_per_lap populated, not NULL
+
+    damage_args, _ = car_frame_damage_repo.last_call("insert_batch")
+    damage_rows = damage_args[0]
+    assert len(damage_rows) == 1
+    assert all(v is not None for v in damage_rows[0][4:])
+
+
 def test_telemetry2_gated_fields_null_when_not_2026_regs():
     svc, car_frame_repo = _make_service()
     svc.write_frame(

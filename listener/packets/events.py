@@ -106,12 +106,13 @@ class SafetyCar:
     safety_car_type: int                # uint8     |   0 = No Safety Car, 1 = Full Safety Car, 2 = Virtual Safety Car, 3 = Formation Lap Safety Car
     event_type: int                     # uint8     |   0 = Deployed, 1 = Returning, 2 = Returned, 3 = Resume Race
 
-_COLLISION_FORMAT = '<2B'
+_COLLISION_FORMAT = '<3B'
 _COLLISION_FORMAT_SIZE = struct.calcsize(_COLLISION_FORMAT)
 @dataclass
 class Collision:
     vehicle_1_index: int                # uint8     |   Vehicle index of the first vehicle involved in the collision
     vehicle_2_index: int                # uint8     |   Vehicle index of the second vehicle involved in the collision
+    severity: int                       # uint8     |   Collision severity - 0 = low, 1 = medium, 2 = high
 
 _EVENT_STRING_CODE_FORMAT = '<4B'
 _EVENT_STRING_CODE_FORMAT_SIZE = struct.calcsize(_EVENT_STRING_CODE_FORMAT)

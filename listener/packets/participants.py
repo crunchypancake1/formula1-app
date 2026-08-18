@@ -1,18 +1,18 @@
 import struct
 from dataclasses import dataclass
 
+from .constants import MAX_CARS
 from .packet_header import PacketHeader
 
-_PARTICIPANT_FORMAT = '<7B32s2BHBB12B'
+_PARTICIPANT_FORMAT = '<B3H3B32s2BHBB12B'
 PARTICIPANT_DATA_SIZE = struct.calcsize(_PARTICIPANT_FORMAT)
-MAX_CARS = 22
 
 @dataclass
 class Participant:
     ai_controlled: int                      # uint8     |   Whether the vehicle is AI (1) or Human (0) controlled
-    driver_id: int                          # uint8     |   Driver id - see appendix, 255 if network human
-    network_id: int                         # uint8     |   Network id – unique identifier for network players
-    team_id: int                            # uint8     |   Team id - see appendix
+    driver_id: int                          # uint16    |   Driver id - see appendix, 255 if network human
+    network_id: int                         # uint16    |   Network id – unique identifier for network players
+    team_id: int                            # uint16    |   Team id - see appendix
     my_team: int                            # uint8     |   My team flag – 1 = My Team, 0 = otherwise
     race_number: int                        # uint8     |   Race number of the car
     nationality: int                        # uint8     |   Nationality of the driver
@@ -37,7 +37,7 @@ def unpack_participants(packet_header: PacketHeader, data: bytes) -> Participant
     Unpack Participants packet (Packet ID: 4).
 
     Contains driver roster for the session - names, teams, nationalities,
-    AI status, etc. for all 22 cars. Sent every ~5 seconds.
+    AI status, etc. for all MAX_CARS cars. Sent every ~5 seconds.
 
     Args:
         packet_header: Unpacked packet header

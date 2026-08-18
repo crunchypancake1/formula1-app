@@ -1,16 +1,17 @@
 import struct
 from dataclasses import dataclass
 
+from .constants import MAX_CARS
 from .packet_header import PacketHeader
 
-_LOBBY_PLAYER_FORMAT = '<4B32s3BHB'
+_LOBBY_PLAYER_FORMAT = '<BH2B32s3BHB'
 LOBBY_PLAYER_DATA_SIZE = struct.calcsize(_LOBBY_PLAYER_FORMAT)
-MAX_LOBBY_PLAYERS = 22
+MAX_LOBBY_PLAYERS = MAX_CARS
 
 @dataclass
 class LobbyPlayer:
     ai_controlled: int                      # uint8     |   Whether the vehicle is AI (1) or Human (0) controlled
-    team_id: int                            # uint8     |   Team id - see appendix
+    team_id: int                            # uint16    |   Team id - see appendix
     nationality: int                        # uint8     |   Nationality of the driver
     platform: int                           # uint8     |   1 = Steam, 3 = PlayStation, 4 = Xbox, 6 = Origin, 255 = unknown
     m_name: str                             # char[32]  |   Name of participant in UTF-8 format - null terminated

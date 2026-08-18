@@ -2,11 +2,12 @@
 
 import struct
 
+from packets.constants import MAX_CARS
+
 from .header import build_header
 
 _NUM_ACTIVE_CARS_FORMAT = '<B'
-_PARTICIPANT_FORMAT = '<7B32s2BHBB12B'
-_MAX_CARS = 22
+_PARTICIPANT_FORMAT = '<B3H3B32s2BHBB12B'
 
 
 def _build_participant(
@@ -63,7 +64,7 @@ def build_participants_packet(
 
     body = struct.pack(_NUM_ACTIVE_CARS_FORMAT, num_drivers)
 
-    for i in range(_MAX_CARS):
+    for i in range(MAX_CARS):
         if i < num_drivers:
             name = driver_names[i] if i < len(driver_names) else f"SimTestDriver_{i:02d}"
             team_id = i // 2

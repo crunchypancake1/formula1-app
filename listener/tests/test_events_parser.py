@@ -93,7 +93,7 @@ class TestEventsParser:
     def test_coll_event(self):
         packet = build_event_coll(
             session_uid=1, session_time=80.0, frame_id=500,
-            vehicle_1_index=2, vehicle_2_index=7,
+            vehicle_1_index=2, vehicle_2_index=7, severity=1,
         )
         header = unpack_packet_header(packet[:PACKET_HEADER_FORMAT_SIZE])
         body = packet[PACKET_HEADER_FORMAT_SIZE:]
@@ -102,6 +102,18 @@ class TestEventsParser:
         assert isinstance(result.event, Collision)
         assert result.event.vehicle_1_index == 2
         assert result.event.vehicle_2_index == 7
+        assert result.event.severity == 1
+
+    @pytest.mark.parametrize("severity", [0, 1, 2])
+    def test_coll_event_severity_round_trips(self, severity):
+        packet = build_event_coll(
+            session_uid=1, session_time=80.0, frame_id=500,
+            vehicle_1_index=2, vehicle_2_index=7, severity=severity,
+        )
+        header = unpack_packet_header(packet[:PACKET_HEADER_FORMAT_SIZE])
+        body = packet[PACKET_HEADER_FORMAT_SIZE:]
+        result = unpack_event_packet(header, body)
+        assert result.event.severity == severity
 
     def test_sptp_event(self):
         packet = build_event_sptp(

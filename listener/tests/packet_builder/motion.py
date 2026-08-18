@@ -3,10 +3,11 @@
 import math
 import struct
 
+from packets.constants import MAX_CARS
+
 from .header import build_header
 
-_CAR_MOTION_FORMAT = '<6f6h6f'
-_MAX_CARS = 22
+_CAR_MOTION_FORMAT = '<6f6h3h3f'
 
 
 def build_motion_packet(
@@ -27,7 +28,7 @@ def build_motion_packet(
     )
 
     body = b''
-    for i in range(_MAX_CARS):
+    for i in range(MAX_CARS):
         if i < num_drivers:
             progress = (lap_distance / track_length) if track_length > 0 else 0
             angle = progress * 2 * math.pi
@@ -44,10 +45,10 @@ def build_motion_packet(
                 50.0, 0.0, 50.0,            # world_velocity x/y/z
                 forward_x, 0, forward_z,    # forward_dir x/y/z (int16)
                 0, 32767, 0,                # right_dir x/y/z (int16)
-                0.1, 0.5, 1.0,              # g_force lat/long/vert
+                100, 500, 1000,             # g_force lat/long/vert (int16, quantised /1000)
                 angle, 0.01, 0.0,           # yaw/pitch/roll
             )
         else:
-            body += struct.pack(_CAR_MOTION_FORMAT, *([0.0] * 6 + [0] * 6 + [0.0] * 6))
+            body += struct.pack(_CAR_MOTION_FORMAT, *([0.0] * 6 + [0] * 9 + [0.0] * 3))
 
     return header + body

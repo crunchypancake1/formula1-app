@@ -1,13 +1,14 @@
 import struct
 from dataclasses import dataclass
 
+from .constants import MAX_CARS
 from .packet_header import PacketHeader
 
 # uint16 speed, float throttle/steer/brake, uint8 clutch, int8 gear, uint16 rpm,
 # uint8 drs, uint8 revLightsPercent, uint16 revLightsBitValue,
 # uint16[4] brakesTemp, uint8[4] tyresSurfaceTemp, uint8[4] tyresInnerTemp,
-# uint16 engineTemp, float[4] tyresPressure, uint8[4] surfaceType
-_CAR_TELEMETRY_FORMAT = '<H3fBbHBBH4H4B4BH4f4B'
+# uint8 engineTemp, float[4] tyresPressure, uint8[4] surfaceType
+_CAR_TELEMETRY_FORMAT = '<H3fBbHBBH4H4B4BB4f4B'
 _CAR_TELEMETRY_FORMAT_SIZE = struct.calcsize(_CAR_TELEMETRY_FORMAT)
 
 
@@ -24,7 +25,7 @@ class CarTelemetryData:
     brakes_temperature: tuple                # uint16[4] | celsius per wheel
     tyres_surface_temp: tuple                # uint8[4]  | celsius per wheel
     tyres_inner_temp: tuple                  # uint8[4]  | celsius per wheel
-    engine_temperature: int                  # uint16 | celsius
+    engine_temperature: int                  # uint8  | celsius
     tyres_pressure: tuple                    # float[4]  | PSI per wheel
     surface_type: tuple                      # uint8[4]  | enum per wheel
 
@@ -36,8 +37,8 @@ class CarTelemetryPacket:
 
 
 def unpack_car_telemetry(packet_header: PacketHeader, data: bytes) -> CarTelemetryPacket:
-    """Unpack Car Telemetry packet (Packet ID: 6). 22 cars of telemetry data."""
-    car_data_bytes = data[:(_CAR_TELEMETRY_FORMAT_SIZE * 22)]
+    """Unpack Car Telemetry packet (Packet ID: 6). MAX_CARS cars of telemetry data."""
+    car_data_bytes = data[:(_CAR_TELEMETRY_FORMAT_SIZE * MAX_CARS)]
 
     car_list = []
     for f in struct.iter_unpack(_CAR_TELEMETRY_FORMAT, car_data_bytes):

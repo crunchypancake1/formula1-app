@@ -116,9 +116,10 @@ def build_event_coll(
     frame_id: int,
     vehicle_1_index: int,
     vehicle_2_index: int,
+    severity: int = 0,
 ) -> bytes:
     """Collision event."""
-    event_body = struct.pack('<2B', vehicle_1_index, vehicle_2_index)
+    event_body = struct.pack('<3B', vehicle_1_index, vehicle_2_index, severity)
     return _build_event_packet(session_uid, session_time, frame_id, "COLL", event_body)
 
 

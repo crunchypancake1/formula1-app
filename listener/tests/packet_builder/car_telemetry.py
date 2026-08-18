@@ -2,10 +2,11 @@
 
 import struct
 
+from packets.constants import MAX_CARS
+
 from .header import build_header
 
-_CAR_TELEMETRY_FORMAT = '<H3fBbHBBH4H4B4BH4f4B'
-_MAX_CARS = 22
+_CAR_TELEMETRY_FORMAT = '<H3fBbHBBH4H4B4BB4f4B'
 
 
 def build_car_telemetry_packet(
@@ -25,7 +26,7 @@ def build_car_telemetry_packet(
     )
 
     body = b''
-    for i in range(_MAX_CARS):
+    for i in range(MAX_CARS):
         if i < num_drivers:
             speed = base_speed + i * 2
             body += struct.pack(

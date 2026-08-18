@@ -47,6 +47,10 @@ class SessionService:
         self._last_forecast_hash: BoundedDict = BoundedDict(200)
         self._session_types: BoundedDict = BoundedDict(200)
         self._track_ids: BoundedDict = BoundedDict(200)
+        # Sessions where a non-zero start_reaction_time has already been
+        # captured, so we stop issuing the (cheap but pointless) UPDATE
+        # once the real value is locked in.
+        self._start_reaction_captured = BoundedSet(max_size=100)
 
 
     def handle_session_packet(self, packet):
@@ -69,6 +73,16 @@ class SessionService:
         if session_uid not in self._seen_sessions:
             self._insert_session(packet, session_type)
             self._seen_sessions.add(session_uid)
+
+        # Capture start_reaction_time the first time it is non-zero
+        # (0.0 while starts are assisted).
+        start_reaction_time = getattr(packet, 'start_reaction_time', 0.0)
+        if start_reaction_time and session_uid not in self._start_reaction_captured:
+            try:
+                self._sessions_repo.capture_start_reaction_time(session_uid, start_reaction_time)
+                self._start_reaction_captured.add(session_uid)
+            except Exception as e:
+                self._logger.error(f"Failed to capture start_reaction_time: {e}", exc_info=True)
 
         # Insert into session_timeline hypertable (every packet)
         self._insert_timeline(packet)
@@ -99,6 +113,16 @@ class SessionService:
             weekend_link_val = getattr(packet, "weekend_link_identifier", 0)
             session_link_val = getattr(packet, "session_link_identifier", 0)
 
+            # Slice the fixed-size zone arrays to their real num* count
+            # before persisting — store only the real zones, not the
+            # 8/8/4-slot arrays padded with zero-entries.
+            num_aero_full = getattr(packet, 'num_active_aero_zones_full', 0)
+            num_aero_partial = getattr(packet, 'num_active_aero_zones_partial', 0)
+            num_drs = getattr(packet, 'num_drs_zones', 0)
+            aero_zones_full = getattr(packet, 'active_aero_zones_full', [])[:num_aero_full]
+            aero_zones_partial = getattr(packet, 'active_aero_zones_partial', [])[:num_aero_partial]
+            drs_zones = getattr(packet, 'drs_zones', [])[:num_drs]
+
             # Update technical track data (track must already exist)
             self._sessions_repo.update_track_technical_data(
                 track_id=packet.track_id,
@@ -107,6 +131,10 @@ class SessionService:
                 sector3_start=packet.sector_3_lap_distance_start,
                 marshal_zones=getattr(packet, 'marshal_zones', []),
                 pit_speed_limit=packet.pit_speed_limit,
+                active_aero_track_status=getattr(packet, 'active_aero_track_status', None),
+                active_aero_zones_full=aero_zones_full,
+                active_aero_zones_partial=aero_zones_partial,
+                drs_zones=drs_zones,
             )
 
             self._sessions_repo.insert_session(

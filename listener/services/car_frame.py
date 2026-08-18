@@ -175,10 +175,18 @@ def _build_damage_fields(damage) -> tuple:
     )
 
 
-def _build_car_status_extended_fields(status) -> tuple:
-    """Extract 6 ERS/fuel/brake-bias fields from a CarStatusData object."""
-    if status is None:
-        return (None,) * 6
+def _build_car_status_extended_fields(status, is_restricted: bool) -> tuple:
+    """
+    Extract 7 ERS/fuel/brake-bias fields from a CarStatusData object.
+
+    These fields (fuelInTank, fuelRemainingLaps, frontBrakeBias,
+    ersDeployMode, ersStoreEnergy, ersDeployedThisLap,
+    ersHarvestLimitPerLap) are zeroed by the game itself for any other
+    driver whose your_telemetry setting is Restricted — for those cars we
+    return NULLs rather than store the game's fake zeros (Part 2.2).
+    """
+    if status is None or is_restricted:
+        return (None,) * 7
     return (
         status.front_brake_bias,
         status.fuel_in_tank,
@@ -186,6 +194,32 @@ def _build_car_status_extended_fields(status) -> tuple:
         status.ers_store_energy,
         status.ers_deploy_mode,
         status.ers_deployed_this_lap,
+        status.ers_harvest_limit_per_lap,
+    )
+
+
+def _build_telemetry2_fields(telemetry2) -> tuple:
+    """
+    Extract the 8 Car Telemetry 2 (packet 16) fields.
+
+    activeAero*/overtake*/2026Regulations are only meaningful when
+    m_2026Regulations == 1 — on a classic/F2 car they're legitimately zero
+    and should be stored as NULL, not 0. driving_wrong_way is meaningful on
+    any car regardless of regulations, so it's always populated.
+    """
+    if telemetry2 is None:
+        return (None,) * 8
+    if telemetry2.regulations_2026 == 0:
+        return (None,) * 7 + (bool(telemetry2.driving_wrong_way),)
+    return (
+        telemetry2.active_aero_mode,
+        bool(telemetry2.active_aero_available),
+        telemetry2.active_aero_activation_distance,
+        bool(telemetry2.overtake_available),
+        bool(telemetry2.overtake_active),
+        telemetry2.overtake_activation_distance,
+        bool(telemetry2.regulations_2026),
+        bool(telemetry2.driving_wrong_way),
     )
 
 
@@ -193,8 +227,8 @@ class CarFrameService:
     """
     Handles combined frame data (Motion + Telemetry + Lap Data + Car Status).
 
-    Receives pre-combined data for all 22 cars in a single frame and writes
-    one batch INSERT of up to 22 rows to the car_frame hypertable.
+    Receives pre-combined data for up to MAX_CARS cars in a single frame and
+    writes one batch INSERT of up to MAX_CARS rows to the car_frame hypertable.
     """
 
     def __init__(
@@ -220,6 +254,8 @@ class CarFrameService:
         lap_data_list,
         car_status_data=None,
         car_damage_data=None,
+        car_telemetry2_data=None,
+        restricted_indices: Optional[set] = None,
         race_started: bool = True,
     ):
         if not race_started:
@@ -229,6 +265,8 @@ class CarFrameService:
                 )
                 self._formation_lap_logged[session_uid] = True
             return
+
+        restricted = restricted_indices or set()
 
         rows = []
         damage_rows = []
@@ -241,6 +279,8 @@ class CarFrameService:
             telemetry = telemetry_data[car_index] if telemetry_data else None
             lap = lap_data_list[car_index] if lap_data_list else None
             status = car_status_data[car_index] if car_status_data else None
+            telemetry2 = car_telemetry2_data[car_index] if car_telemetry2_data else None
+            is_restricted = car_index in restricted
 
             # Skip drivers sitting in the garage
             if lap is not None and lap.driver_status == 0:
@@ -252,11 +292,16 @@ class CarFrameService:
                 + _build_telemetry_fields(telemetry, self._logger)
                 + _build_lap_fields(lap, self._logger)
                 + _build_status_fields(status, self._logger)
-                + _build_car_status_extended_fields(status)
+                + _build_car_status_extended_fields(status, is_restricted)
+                + _build_telemetry2_fields(telemetry2)
             )
             rows.append(row)
 
-            if car_damage_data is not None:
+            # Restricted drivers: skip the damage row entirely. ~30 of its
+            # 34 columns are guaranteed zero by the game for a Restricted
+            # driver's car, and this row is written at 10 Hz for the whole
+            # race — the single largest storage win from Part 2.2.
+            if car_damage_data is not None and not is_restricted:
                 damage = car_damage_data[car_index]
                 damage_row = (
                     (session_uid, user_id, session_time, overall_frame_identifier)
@@ -265,8 +310,12 @@ class CarFrameService:
                 damage_rows.append(damage_row)
 
         # Second pass: fill gap_to_car_behind_ms for each row.
-        # Tuple layout: meta(4) + motion(12) + telemetry(29) + lap(18) + status(8) + status_ext(6)
-        # position is at index 48, gap_to_car_ahead_ms at 54, gap_to_car_behind_ms at 55
+        # Tuple layout: meta(4) + motion(12) + telemetry(29) + lap(18) + status(8)
+        #   + status_ext(7) + telemetry2(8)
+        # position is at index 48, gap_to_car_ahead_ms at 54, gap_to_car_behind_ms at 55.
+        # status_ext/telemetry2 were appended AFTER the lap block on purpose
+        # (Task 7) so these indices stay correct — do not insert new fields
+        # before the lap block without recomputing them.
         IDX_POSITION = 48
         IDX_GAP_BEHIND = 55
         IDX_GAP_AHEAD = 54

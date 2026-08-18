@@ -153,6 +153,7 @@ class EventsService:
             session_time=session_time,
             user1_id=driver1,
             user2_id=driver2,
+            severity=event.severity,
         )
 
     def _handle_penalty(self, session_uid, frame_id, session_time, event, user_map):

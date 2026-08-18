@@ -79,6 +79,13 @@ class CarSetupService:
             return
 
         setup_hash, fields, telemetry_available = cached
+
+        # Restricted/blank setup (other players in MP, spectators): the
+        # game sends an all-zeros setup that can never be a usable row —
+        # skip persistence entirely rather than writing an unusable row.
+        if not telemetry_available:
+            return
+
         setup_id = self._car_setups_repo.upsert_setup(
             setup_hash, track_id, fields,
             user_id=user_id,

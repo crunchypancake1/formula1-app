@@ -7,7 +7,7 @@ from database.repositories import EntriesRepository
 from utils.bounded_dict import BoundedDict
 
 GENERIC_DRIVER_NAMES = {"player", ""}
-EMPTY_SLOT_TEAM_ID = 255
+EMPTY_SLOT_TEAM_ID = 65535
 
 
 class ParticipantsService:
@@ -30,6 +30,15 @@ class ParticipantsService:
         self._written_humans: BoundedDict = BoundedDict(200)
         self._user_map_cache: dict[str, dict[int, int]] = {}
         self._player_counter: int | None = None
+        # session_uid -> frozenset of car_indices with your_telemetry == 0
+        # (Restricted), excluding the local player's own car — updated on
+        # every Participants packet since a driver can change their
+        # telemetry setting mid-session.
+        self._restricted_indices: BoundedDict = BoundedDict(200)
+
+    def get_restricted_indices(self, session_uid: str) -> frozenset[int]:
+        """Return the set of car_indices currently restricted (your_telemetry == 0) for a session."""
+        return self._restricted_indices.get(session_uid, frozenset())
 
     def _next_generic_name(self) -> str:
         """Generate the next sequential 'Player N' name, querying the DB on first call."""
@@ -49,6 +58,14 @@ class ParticipantsService:
             car_index -> user_id mapping for human drivers in the session
         """
         session_uid = str(packet.header.session_uid)
+
+        # Restricted set: drivers with your_telemetry == 0 (Restricted).
+        # The local player's own car is always fully visible regardless of
+        # their own telemetry setting. Updated every packet since this can
+        # change mid-session.
+        self._restricted_indices[session_uid] = frozenset(
+            i for i, p in enumerate(packet.participants) if p.your_telemetry == 0
+        ) - {packet.header.player_car_index}
 
         # Build list of real human drivers (skip AI and empty lobby slots)
         human_entries = []

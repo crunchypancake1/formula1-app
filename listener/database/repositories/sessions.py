@@ -33,6 +33,10 @@ class SessionsRepository(RepositoryBase):
         sector3_start: float,
         marshal_zones: list,
         pit_speed_limit: int,
+        active_aero_track_status: Optional[int] = None,
+        active_aero_zones_full: Optional[list] = None,
+        active_aero_zones_partial: Optional[list] = None,
+        drs_zones: Optional[list] = None,
     ) -> bool:
         """
         Update technical track data from session packet (only if not already set).
@@ -48,6 +52,13 @@ class SessionsRepository(RepositoryBase):
             sector3_start: Distance where sector 3 starts
             marshal_zones: List of MarshalZone dataclass instances
             pit_speed_limit: Pit speed limit in km/h
+            active_aero_track_status: 0 = Full, 1 = Partial (2026 Season Pack)
+            active_aero_zones_full: List of ActiveAeroZone instances, already
+                sliced to the real num_active_aero_zones_full count
+            active_aero_zones_partial: List of ActiveAeroZone instances, already
+                sliced to the real num_active_aero_zones_partial count
+            drs_zones: List of DRSZone instances, already sliced to the real
+                num_drs_zones count
 
         Returns:
             True if the track exists, False if track doesn't exist
@@ -61,13 +72,24 @@ class SessionsRepository(RepositoryBase):
                     "zone_flag": safe_enum_name(FlagStatus, zone.zone_flag, self._logger),
                 })
 
+        def _zones_json(zones):
+            if zones is None:
+                return None
+            return json.dumps([
+                {"zone_start": z.zone_start, "zone_end": z.zone_end} for z in zones
+            ])
+
         sql = """
             UPDATE telemetry.tracks
             SET track_length = COALESCE(track_length, %s),
                 sector2_start = COALESCE(sector2_start, %s),
                 sector3_start = COALESCE(sector3_start, %s),
                 marshal_zones = COALESCE(marshal_zones, %s),
-                pit_speed_limit = COALESCE(pit_speed_limit, %s)
+                pit_speed_limit = COALESCE(pit_speed_limit, %s),
+                active_aero_track_status = COALESCE(active_aero_track_status, %s),
+                active_aero_zones_full = COALESCE(active_aero_zones_full, %s),
+                active_aero_zones_partial = COALESCE(active_aero_zones_partial, %s),
+                drs_zones = COALESCE(drs_zones, %s)
             WHERE track_id = %s
         """
 
@@ -77,6 +99,10 @@ class SessionsRepository(RepositoryBase):
             sector3_start,
             json.dumps(zones_data),
             pit_speed_limit,
+            active_aero_track_status,
+            _zones_json(active_aero_zones_full),
+            _zones_json(active_aero_zones_partial),
+            _zones_json(drs_zones),
             track_id,
         )
         rows_affected = self._execute(sql, params, table_name="telemetry.tracks")
@@ -154,6 +180,22 @@ class SessionsRepository(RepositoryBase):
         )
 
         self._execute(sql, params, table_name=self.TABLE_NAME)
+
+    def capture_start_reaction_time(self, session_uid: str, start_reaction_time: float):
+        """
+        Capture start_reaction_time onto sessions the first time it is non-zero.
+
+        start_reaction_time is 0.0 when starts are assisted, so this follows
+        a "first non-zero wins" pattern via COALESCE/NULLIF: once a real
+        value has been captured it is never overwritten by a later 0.0 from
+        an assisted-start read, and a 0.0 read never overwrites anything.
+        """
+        sql = """
+            UPDATE telemetry.sessions
+            SET start_reaction_time = COALESCE(start_reaction_time, NULLIF(%s, 0))
+            WHERE session_uid = %s
+        """
+        self._execute(sql, (start_reaction_time, session_uid), table_name=self.TABLE_NAME)
 
     def upsert_weather_forecast(
         self,

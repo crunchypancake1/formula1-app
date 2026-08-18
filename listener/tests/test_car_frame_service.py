@@ -50,6 +50,28 @@ def _make_status():
         tyres_age_laps=5, vehicle_fia_flags=0, network_paused=0,
         front_brake_bias=58, fuel_in_tank=50.0, fuel_remaining_laps=10.0,
         ers_store_energy=4000000.0, ers_deploy_mode=1, ers_deployed_this_lap=100000.0,
+        ers_harvest_limit_per_lap=200000.0,
+    )
+
+
+def _make_damage():
+    return SimpleNamespace(
+        tyres_wear=(1.0, 1.0, 1.0, 1.0), tyres_damage=(0, 0, 0, 0),
+        brakes_damage=(0, 0, 0, 0), tyre_blisters=(0, 0, 0, 0),
+        front_left_wing_damage=0, front_right_wing_damage=0, rear_wing_damage=0,
+        floor_damage=0, diffuser_damage=0, sidepod_damage=0,
+        drs_fault=0, ers_fault=0, gearbox_damage=0, engine_damage=0,
+        engine_mguh_wear=0, engine_es_wear=0, engine_ce_wear=0,
+        engine_ice_wear=0, engine_mguk_wear=0, engine_tc_wear=0,
+        engine_blown=0, engine_seized=0,
+    )
+
+
+def _make_telemetry2(regs_2026=1, driving_wrong_way=0):
+    return SimpleNamespace(
+        active_aero_mode=1, active_aero_available=1, active_aero_activation_distance=50,
+        overtake_available=1, overtake_active=0, overtake_activation_distance=100,
+        regulations_2026=regs_2026, driving_wrong_way=driving_wrong_way,
     )
 
 
@@ -199,3 +221,110 @@ def test_tyre_age_255_becomes_none():
     # status: pit_limiter(63), drs_allowed(64), drs_activation_distance(65),
     #         actual_tyre(66), visual_tyre(67), tyres_age_laps(68)
     assert row[68] is None
+
+
+# --- Task 7: restricted-telemetry / packet-16 smoke coverage ---
+# status_ext fields (7) start at index 71 (4 + 12 + 29 + 18 + 8 = 71):
+#   front_brake_bias(71), fuel_in_tank(72), fuel_remaining_laps(73),
+#   ers_store_energy(74), ers_deploy_mode(75), ers_deployed_this_lap(76),
+#   ers_harvest_limit_per_lap(77)
+# telemetry2 fields (8) start at index 78:
+#   active_aero_mode(78), active_aero_available(79),
+#   active_aero_activation_distance(80), overtake_available(81),
+#   overtake_active(82), overtake_activation_distance(83),
+#   is_2026_regulations(84), driving_wrong_way(85)
+
+
+def test_restricted_car_status_extended_fields_are_null():
+    svc, car_frame_repo = _make_service()
+    svc.write_frame(
+        session_uid="123", session_time=10.0, overall_frame_identifier=1,
+        user_map={0: 100},
+        motion_data=_pad_list([_make_motion(0)]),
+        telemetry_data=_pad_list([_make_telemetry(0)]),
+        lap_data_list=_pad_list([_make_lap(0)]),
+        car_status_data=_pad_list([_make_status()]),
+        restricted_indices={0},
+        race_started=True,
+    )
+    args, _ = car_frame_repo.last_call("insert_batch")
+    row = args[0][0]
+    assert all(v is None for v in row[71:78])
+
+
+def test_unrestricted_car_status_extended_fields_are_populated():
+    svc, car_frame_repo = _make_service()
+    svc.write_frame(
+        session_uid="123", session_time=10.0, overall_frame_identifier=1,
+        user_map={0: 100},
+        motion_data=_pad_list([_make_motion(0)]),
+        telemetry_data=_pad_list([_make_telemetry(0)]),
+        lap_data_list=_pad_list([_make_lap(0)]),
+        car_status_data=_pad_list([_make_status()]),
+        restricted_indices=set(),
+        race_started=True,
+    )
+    args, _ = car_frame_repo.last_call("insert_batch")
+    row = args[0][0]
+    assert row[71] == 58  # front_brake_bias
+    assert row[77] == 200000.0  # ers_harvest_limit_per_lap
+
+
+def test_restricted_car_damage_row_is_skipped():
+    car_frame_repo = MockRepo()
+    car_frame_damage_repo = MockRepo()
+    svc = CarFrameService(car_frame_repo, car_frame_damage_repo)
+    svc.write_frame(
+        session_uid="123", session_time=10.0, overall_frame_identifier=1,
+        user_map={0: 100, 1: 101},
+        motion_data=_pad_list([_make_motion(0), _make_motion(1)]),
+        telemetry_data=_pad_list([_make_telemetry(0), _make_telemetry(1)]),
+        lap_data_list=_pad_list([_make_lap(0), _make_lap(1)]),
+        car_status_data=_pad_list([_make_status(), _make_status()]),
+        car_damage_data=_pad_list([_make_damage(), _make_damage()]),
+        restricted_indices={0},
+        race_started=True,
+    )
+    args, _ = car_frame_damage_repo.last_call("insert_batch")
+    rows = args[0]
+    # Only car 1 (unrestricted) gets a damage row; car 0 is skipped entirely.
+    assert len(rows) == 1
+    assert rows[0][1] == 101
+
+
+def test_telemetry2_gated_fields_null_when_not_2026_regs():
+    svc, car_frame_repo = _make_service()
+    svc.write_frame(
+        session_uid="123", session_time=10.0, overall_frame_identifier=1,
+        user_map={0: 100},
+        motion_data=_pad_list([_make_motion(0)]),
+        telemetry_data=_pad_list([_make_telemetry(0)]),
+        lap_data_list=_pad_list([_make_lap(0)]),
+        car_status_data=_pad_list([_make_status()]),
+        car_telemetry2_data=_pad_list([_make_telemetry2(regs_2026=0, driving_wrong_way=1)]),
+        race_started=True,
+    )
+    args, _ = car_frame_repo.last_call("insert_batch")
+    row = args[0][0]
+    # 7 regs-gated fields are None (indices 78-84)
+    assert all(v is None for v in row[78:85])
+    # driving_wrong_way (index 85) stays populated regardless of regs
+    assert row[85] is True
+
+
+def test_telemetry2_fields_populated_when_2026_regs():
+    svc, car_frame_repo = _make_service()
+    svc.write_frame(
+        session_uid="123", session_time=10.0, overall_frame_identifier=1,
+        user_map={0: 100},
+        motion_data=_pad_list([_make_motion(0)]),
+        telemetry_data=_pad_list([_make_telemetry(0)]),
+        lap_data_list=_pad_list([_make_lap(0)]),
+        car_status_data=_pad_list([_make_status()]),
+        car_telemetry2_data=_pad_list([_make_telemetry2(regs_2026=1)]),
+        race_started=True,
+    )
+    args, _ = car_frame_repo.last_call("insert_batch")
+    row = args[0][0]
+    assert row[78] == 1  # active_aero_mode
+    assert row[84] is True  # is_2026_regulations

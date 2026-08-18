@@ -28,7 +28,8 @@ class CarFrameRepository(RepositoryBase):
                       sector..result_status (4 lap enums),
                       gap/pit fields (10 new lap data fields),
                       pit_limiter..network_paused (8 car status),
-                      front_brake_bias..ers_deployed_this_lap (6 ERS/fuel/brake-bias))
+                      front_brake_bias..ers_harvest_limit_per_lap (7 ERS/fuel/brake-bias),
+                      active_aero_mode..driving_wrong_way (8 Car Telemetry 2 / packet 16 fields))
         """
         if not rows:
             return
@@ -66,9 +67,14 @@ class CarFrameRepository(RepositoryBase):
                 pit_limiter, drs_allowed, drs_activation_distance,
                 actual_tyre_compound, visual_tyre_compound, tyres_age_laps,
                 vehicle_fia_flags, network_paused,
-                -- Car Status: ERS/fuel/brake-bias
+                -- Car Status: ERS/fuel/brake-bias (restricted-null per Part 2.2)
                 front_brake_bias, fuel_in_tank, fuel_remaining_laps,
-                ers_store_energy, ers_deploy_mode, ers_deployed_this_lap
+                ers_store_energy, ers_deploy_mode, ers_deployed_this_lap,
+                ers_harvest_limit_per_lap,
+                -- Car Telemetry 2 / Packet 16 (2026 Season Pack)
+                active_aero_mode, active_aero_available, active_aero_activation_distance,
+                overtake_available, overtake_active, overtake_activation_distance,
+                is_2026_regulations, driving_wrong_way
             ) VALUES (
                 clock_timestamp(), %s, %s, %s, %s,
                 %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
@@ -79,7 +85,8 @@ class CarFrameRepository(RepositoryBase):
                 %s, %s, %s, %s,
                 %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                 %s, %s, %s, %s, %s, %s, %s, %s,
-                %s, %s, %s, %s, %s, %s
+                %s, %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s, %s, %s, %s
             )
             ON CONFLICT (timestamp, session_uid, user_id) DO NOTHING
         """

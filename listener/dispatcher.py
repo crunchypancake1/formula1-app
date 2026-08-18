@@ -13,6 +13,7 @@ from packets import (
     unpack_car_setup,
     unpack_car_status,
     unpack_car_telemetry,
+    unpack_car_telemetry2,
     unpack_event_packet,
     unpack_final_classification,
     unpack_lap_data,
@@ -25,7 +26,12 @@ from packets import (
     unpack_session_history,
     unpack_tyre_sets,
 )
-from packets.packet_header import PacketValidationError, validate_packet_header
+from packets.packet_header import (
+    EXPECTED_BODY_SIZE,
+    VARIABLE_LENGTH_PACKET_IDS,
+    PacketValidationError,
+    validate_packet_header,
+)
 from services import (
     CarFrameService,
     CarSetupService,
@@ -49,7 +55,7 @@ EXCLUDED_SESSION_TYPES: Set[int] = {0, 18}
 RACE_SESSION_TYPES: Set[int] = {15, 16, 17, 100}
 
 # Packet IDs that combine into a single car_frame row (buffered)
-CAR_FRAME_PACKET_IDS: Set[int] = {0, 2, 6, 7, 10}
+CAR_FRAME_PACKET_IDS: Set[int] = {0, 2, 6, 7, 10, 16}
 
 # Session-level event codes that don't require a user_map
 _SESSION_LEVEL_EVENT_CODES: Set[str] = {
@@ -112,6 +118,43 @@ class PacketDispatcher:
             logger=self._logger,
         )
         self._lock = threading.Lock()
+        # (session_uid, packet_id) pairs already logged for a body-size
+        # mismatch, so a persistently wrong packet logs once per session
+        # instead of once per packet (same rate-limit pattern as
+        # packet_header.py's format rejection logging).
+        self._logged_size_mismatches = BoundedSet(max_size=200)
+
+    def _validate_body_size(self, header, body: bytes) -> bool:
+        """
+        Validate a packet body's length against EXPECTED_BODY_SIZE.
+
+        Variable-length packets (8, 9, 11) are validated as an upper bound;
+        all others must match exactly. Returns False (and logs, rate-limited
+        per (session_uid, packet_id)) on mismatch.
+        """
+        expected = EXPECTED_BODY_SIZE.get(header.packet_id)
+        if expected is None:
+            return True
+
+        if header.packet_id in VARIABLE_LENGTH_PACKET_IDS:
+            ok = len(body) <= expected
+        else:
+            ok = len(body) == expected
+
+        if not ok:
+            key = (header.session_uid, header.packet_id)
+            if key not in self._logged_size_mismatches:
+                self._logged_size_mismatches.add(key)
+                self._logger.warning(
+                    "Dropping packet_id=%s for session %s — body size %d "
+                    "doesn't match expected %s%d",
+                    header.packet_id,
+                    header.session_uid,
+                    len(body),
+                    "<= " if header.packet_id in VARIABLE_LENGTH_PACKET_IDS else "",
+                    expected,
+                )
+        return ok
 
     def handle_packet(self, data: bytes):
         """Parse a UDP packet and route it to the appropriate handler."""
@@ -129,6 +172,10 @@ class PacketDispatcher:
                     return
 
                 body = data[PACKET_HEADER_FORMAT_SIZE:]
+
+                if not self._validate_body_size(header, body):
+                    return
+
                 session_uid = str(header.session_uid)
 
                 if session_uid in self._excluded_sessions:
@@ -290,6 +337,7 @@ class PacketDispatcher:
         lap_data_list = None
         car_status_data = None
         car_damage_data = None
+        car_telemetry2_data = None
         session_time = 0.0
 
         # Determine session_time from whichever packet is available
@@ -330,8 +378,15 @@ class PacketDispatcher:
             damage_packet = unpack_car_damage(header, body)
             car_damage_data = damage_packet.car_damage_data
 
+        if 16 in packets:
+            header, body = packets[16]
+            telemetry2_packet = unpack_car_telemetry2(header, body)
+            car_telemetry2_data = telemetry2_packet.car_telemetry2_data
+
         race_started_val = self._race_started.get(session_uid, True)
         race_started = race_started_val if race_started_val is not None else True
+
+        restricted_indices = self._participants_service.get_restricted_indices(session_uid)
 
         if motion_data or telemetry_data or lap_data_list or car_status_data:
             self._car_frame_service.write_frame(
@@ -344,6 +399,8 @@ class PacketDispatcher:
                 lap_data_list=lap_data_list,
                 car_status_data=car_status_data,
                 car_damage_data=car_damage_data,
+                car_telemetry2_data=car_telemetry2_data,
+                restricted_indices=restricted_indices,
                 race_started=race_started,
             )
 

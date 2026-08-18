@@ -22,16 +22,17 @@ class EventsCollisionsRepository(RepositoryBase):
         session_time: float,
         user1_id: int,
         user2_id: int,
+        severity: Optional[int] = None,
     ):
         sql = """
             INSERT INTO telemetry.events_collisions (
                 session_uid, overall_frame_identifier, session_time,
-                user1_id, user2_id
-            ) VALUES (%s, %s, %s, %s, %s)
+                user1_id, user2_id, severity
+            ) VALUES (%s, %s, %s, %s, %s, %s)
             ON CONFLICT (session_uid, overall_frame_identifier, user1_id) DO NOTHING
         """
         self._execute(
             sql,
-            (session_uid, overall_frame_identifier, session_time, user1_id, user2_id),
+            (session_uid, overall_frame_identifier, session_time, user1_id, user2_id, severity),
             table_name=self.TABLE_NAME,
         )

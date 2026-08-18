@@ -39,6 +39,35 @@ WEEKEND_STRUCTURE_FORMAT_SIZE = struct.calcsize(WEEKEND_STRUCTURE_FORMAT)
 
 REMAINING_FIELDS_FORMAT = '<2f'
 REMAINING_FIELDS_FORMAT_SIZE = struct.calcsize(REMAINING_FIELDS_FORMAT)
+
+_ZONE_FORMAT = '<2f'
+_ZONE_FORMAT_SIZE = struct.calcsize(_ZONE_FORMAT)
+@dataclass
+class ActiveAeroZone:
+    zone_start: float                       # float     |   Fraction (0..1) of way through the lap the zone starts
+    zone_end: float                         # float     |   Fraction (0..1) of way through the lap the zone ends
+
+@dataclass
+class DRSZone:
+    zone_start: float                       # float     |   Fraction (0..1) of way through the lap the zone starts
+    zone_end: float                         # float     |   Fraction (0..1) of way through the lap the zone ends
+
+AERO_TRACK_STATUS_FORMAT = '<BB'
+AERO_TRACK_STATUS_FORMAT_SIZE = struct.calcsize(AERO_TRACK_STATUS_FORMAT)
+
+NUM_ACTIVE_AERO_ZONES = 8
+
+PARTIAL_AERO_ZONES_COUNT_FORMAT = '<B'
+PARTIAL_AERO_ZONES_COUNT_FORMAT_SIZE = struct.calcsize(PARTIAL_AERO_ZONES_COUNT_FORMAT)
+
+DRS_ZONES_COUNT_FORMAT = '<B'
+DRS_ZONES_COUNT_FORMAT_SIZE = struct.calcsize(DRS_ZONES_COUNT_FORMAT)
+
+NUM_DRS_ZONES = 4
+
+TAIL_ASSIST_FIELDS_FORMAT = '<f5B'
+TAIL_ASSIST_FIELDS_FORMAT_SIZE = struct.calcsize(TAIL_ASSIST_FIELDS_FORMAT)
+
 @dataclass
 class SessionPacket:
     header: PacketHeader                    # Header
@@ -119,6 +148,19 @@ class SessionPacket:
     weekend_structure: list[int]            # uint8[12] |   List of session types to show weekend structure
     sector_2_lap_distance_start: float      # float     |   Sector 2 start distance (meters)
     sector_3_lap_distance_start: float      # float     |   Sector 3 start distance (meters)
+    active_aero_track_status: int           # uint8     |   Active aero track status (0 = Full, 1 = Partial)
+    num_active_aero_zones_full: int         # uint8     |   Number of full active aero zones
+    active_aero_zones_full: List[ActiveAeroZone] # [8]  |   Full active aero zones (fixed array, slice to num_active_aero_zones_full)
+    num_active_aero_zones_partial: int      # uint8     |   Number of partial active aero zones
+    active_aero_zones_partial: List[ActiveAeroZone] # [8] |   Partial active aero zones (fixed array, slice to num_active_aero_zones_partial)
+    num_drs_zones: int                      # uint8     |   Number of DRS zones
+    drs_zones: List[DRSZone]                # [4]       |   DRS zones (fixed array, slice to num_drs_zones)
+    start_reaction_time: float              # float     |   Start reaction time (0.0 if assisted starts)
+    anti_lock_brakes_assist: int            # uint8     |   Anti-lock brakes assist (0 = Off, 1 = On)
+    traction_control_assist: int            # uint8     |   Traction control assist (0=Off 1=Medium 2=Full)
+    dynamic_racing_line_hi_vis: int         # uint8     |   Dynamic racing line hi-vis (0 = Off, 1 = On)
+    dynamic_racing_line_colour_blind: int   # uint8     |   Dynamic racing line colour blind (0=Off 1=Prot 2=Deut 3=Trit)
+    recurring_rewind_prompt: int            # uint8     |   Recurring rewind prompt (0 = Off, 1 = On)
 
 def unpack_session(packet_header: PacketHeader, data: bytes) -> SessionPacket:
     """
@@ -184,6 +226,60 @@ def unpack_session(packet_header: PacketHeader, data: bytes) -> SessionPacket:
     remaining_fields_bytes = data[offset:offset + REMAINING_FIELDS_FORMAT_SIZE]
     remaining_fields = struct.unpack(REMAINING_FIELDS_FORMAT, remaining_fields_bytes)
 
+    offset += REMAINING_FIELDS_FORMAT_SIZE
+
+    # Active aero track status + num full active aero zones
+    aero_track_status_bytes = data[offset:offset + AERO_TRACK_STATUS_FORMAT_SIZE]
+    aero_track_status_fields = struct.unpack(AERO_TRACK_STATUS_FORMAT, aero_track_status_bytes)
+
+    offset += AERO_TRACK_STATUS_FORMAT_SIZE
+
+    # Full active aero zones (fixed array of 8)
+    active_aero_zones_full_size = _ZONE_FORMAT_SIZE * NUM_ACTIVE_AERO_ZONES
+    active_aero_zones_full_bytes = data[offset:offset + active_aero_zones_full_size]
+
+    active_aero_zones_full = []
+    for unpacked_zone in struct.iter_unpack(_ZONE_FORMAT, active_aero_zones_full_bytes):
+        active_aero_zones_full.append(ActiveAeroZone(*unpacked_zone))
+
+    offset += active_aero_zones_full_size
+
+    # Num partial active aero zones
+    partial_aero_zones_count_bytes = data[offset:offset + PARTIAL_AERO_ZONES_COUNT_FORMAT_SIZE]
+    partial_aero_zones_count_fields = struct.unpack(PARTIAL_AERO_ZONES_COUNT_FORMAT, partial_aero_zones_count_bytes)
+
+    offset += PARTIAL_AERO_ZONES_COUNT_FORMAT_SIZE
+
+    # Partial active aero zones (fixed array of 8)
+    active_aero_zones_partial_size = _ZONE_FORMAT_SIZE * NUM_ACTIVE_AERO_ZONES
+    active_aero_zones_partial_bytes = data[offset:offset + active_aero_zones_partial_size]
+
+    active_aero_zones_partial = []
+    for unpacked_zone in struct.iter_unpack(_ZONE_FORMAT, active_aero_zones_partial_bytes):
+        active_aero_zones_partial.append(ActiveAeroZone(*unpacked_zone))
+
+    offset += active_aero_zones_partial_size
+
+    # Num DRS zones
+    drs_zones_count_bytes = data[offset:offset + DRS_ZONES_COUNT_FORMAT_SIZE]
+    drs_zones_count_fields = struct.unpack(DRS_ZONES_COUNT_FORMAT, drs_zones_count_bytes)
+
+    offset += DRS_ZONES_COUNT_FORMAT_SIZE
+
+    # DRS zones (fixed array of 4)
+    drs_zones_size = _ZONE_FORMAT_SIZE * NUM_DRS_ZONES
+    drs_zones_bytes = data[offset:offset + drs_zones_size]
+
+    drs_zones = []
+    for unpacked_zone in struct.iter_unpack(_ZONE_FORMAT, drs_zones_bytes):
+        drs_zones.append(DRSZone(*unpacked_zone))
+
+    offset += drs_zones_size
+
+    # Start reaction time + 5 single-byte assist fields
+    tail_assist_fields_bytes = data[offset:offset + TAIL_ASSIST_FIELDS_FORMAT_SIZE]
+    tail_assist_fields = struct.unpack(TAIL_ASSIST_FIELDS_FORMAT, tail_assist_fields_bytes)
+
     # Construct the full data packet from all unpacked fields in field order.
     # Using Any cast to avoid pyright complaining about the mixed-type tuple.
     all_args: Any = (
@@ -195,6 +291,13 @@ def unpack_session(packet_header: PacketHeader, data: bytes) -> SessionPacket:
         + fields_between_forecast_weekend
         + (weekend_structure_list,)
         + remaining_fields
+        + aero_track_status_fields
+        + (active_aero_zones_full,)
+        + partial_aero_zones_count_fields
+        + (active_aero_zones_partial,)
+        + drs_zones_count_fields
+        + (drs_zones,)
+        + tail_assist_fields
     )
     field_names = [f.name for f in dataclasses.fields(SessionPacket)]
     return SessionPacket(**dict(zip(field_names, all_args)))

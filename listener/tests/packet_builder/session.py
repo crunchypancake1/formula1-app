@@ -11,9 +11,16 @@ _WEATHER_FORECAST_SAMPLE_FORMAT = '<3B4bB'
 _BETWEEN_FORECAST_WEEKEND_FORMAT = '<2B3I14BI33B'
 _WEEKEND_STRUCTURE_FORMAT = '<12B'
 _REMAINING_FIELDS_FORMAT = '<2f'
+_ZONE_FORMAT = '<2f'
+_AERO_TRACK_STATUS_FORMAT = '<BB'
+_PARTIAL_AERO_ZONES_COUNT_FORMAT = '<B'
+_DRS_ZONES_COUNT_FORMAT = '<B'
+_TAIL_ASSIST_FIELDS_FORMAT = '<f5B'
 
 _NUM_MARSHAL_ZONES = 21
 _NUM_FORECAST_SAMPLES = 64
+_NUM_ACTIVE_AERO_ZONES = 8
+_NUM_DRS_ZONES = 4
 
 
 def build_session_packet(
@@ -31,6 +38,19 @@ def build_session_packet(
     air_temperature: int = 25,
     weekend_link: int = 1000,
     session_link: int = 2000,
+    active_aero_track_status: int = 0,
+    num_active_aero_zones_full: int = 8,
+    active_aero_zones_full: list | None = None,
+    num_active_aero_zones_partial: int = 8,
+    active_aero_zones_partial: list | None = None,
+    num_drs_zones: int = 4,
+    drs_zones: list | None = None,
+    start_reaction_time: float = 0.0,
+    anti_lock_brakes_assist: int = 0,
+    traction_control_assist: int = 0,
+    dynamic_racing_line_hi_vis: int = 0,
+    dynamic_racing_line_colour_blind: int = 0,
+    recurring_rewind_prompt: int = 0,
 ) -> bytes:
     """Build a complete Session packet (header + body)."""
     header = build_header(
@@ -140,5 +160,53 @@ def build_session_packet(
         4200.0,    # sector_3_lap_distance_start
     )
 
-    body = pre_marshal + marshal_zones + between_mf + forecast + between_fw + weekend + remaining
+    # Active aero track status + num full active aero zones
+    aero_track_status = struct.pack(
+        _AERO_TRACK_STATUS_FORMAT,
+        active_aero_track_status,
+        num_active_aero_zones_full,
+    )
+
+    # Full active aero zones (fixed array of 8)
+    zones_full = active_aero_zones_full or [(0.0, 0.0)] * _NUM_ACTIVE_AERO_ZONES
+    active_aero_zones_full_bytes = b''
+    for zone_start, zone_end in zones_full:
+        active_aero_zones_full_bytes += struct.pack(_ZONE_FORMAT, zone_start, zone_end)
+
+    # Num partial active aero zones
+    partial_aero_zones_count = struct.pack(_PARTIAL_AERO_ZONES_COUNT_FORMAT, num_active_aero_zones_partial)
+
+    # Partial active aero zones (fixed array of 8)
+    zones_partial = active_aero_zones_partial or [(0.0, 0.0)] * _NUM_ACTIVE_AERO_ZONES
+    active_aero_zones_partial_bytes = b''
+    for zone_start, zone_end in zones_partial:
+        active_aero_zones_partial_bytes += struct.pack(_ZONE_FORMAT, zone_start, zone_end)
+
+    # Num DRS zones
+    drs_zones_count = struct.pack(_DRS_ZONES_COUNT_FORMAT, num_drs_zones)
+
+    # DRS zones (fixed array of 4)
+    zones_drs = drs_zones or [(0.0, 0.0)] * _NUM_DRS_ZONES
+    drs_zones_bytes = b''
+    for zone_start, zone_end in zones_drs:
+        drs_zones_bytes += struct.pack(_ZONE_FORMAT, zone_start, zone_end)
+
+    # Start reaction time + 5 single-byte assist fields
+    tail_assist_fields = struct.pack(
+        _TAIL_ASSIST_FIELDS_FORMAT,
+        start_reaction_time,
+        anti_lock_brakes_assist,
+        traction_control_assist,
+        dynamic_racing_line_hi_vis,
+        dynamic_racing_line_colour_blind,
+        recurring_rewind_prompt,
+    )
+
+    body = (
+        pre_marshal + marshal_zones + between_mf + forecast + between_fw + weekend + remaining
+        + aero_track_status + active_aero_zones_full_bytes
+        + partial_aero_zones_count + active_aero_zones_partial_bytes
+        + drs_zones_count + drs_zones_bytes
+        + tail_assist_fields
+    )
     return header + body

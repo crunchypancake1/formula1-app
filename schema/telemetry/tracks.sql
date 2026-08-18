@@ -10,10 +10,21 @@ CREATE TABLE IF NOT EXISTS telemetry.tracks (
     sector2_start FLOAT,
     sector3_start FLOAT,
     marshal_zones JSONB,
-    pit_speed_limit SMALLINT
+    pit_speed_limit SMALLINT,
+    active_aero_track_status SMALLINT,
+    active_aero_zones_full JSONB,
+    active_aero_zones_partial JSONB,
+    drs_zones JSONB
 );
 
--- Seed tracks with info from F1 25 game (track_length in meters, pit_speed_limit in km/h)
+-- 2026 Season Pack: active aero and DRS zone data (track-static, from the
+-- Session packet). Idempotent upgrade path for pre-existing deployments.
+ALTER TABLE telemetry.tracks ADD COLUMN IF NOT EXISTS active_aero_track_status SMALLINT;
+ALTER TABLE telemetry.tracks ADD COLUMN IF NOT EXISTS active_aero_zones_full JSONB;
+ALTER TABLE telemetry.tracks ADD COLUMN IF NOT EXISTS active_aero_zones_partial JSONB;
+ALTER TABLE telemetry.tracks ADD COLUMN IF NOT EXISTS drs_zones JSONB;
+
+-- Seed tracks with info from F1 25 / F1 26 game (track_length in meters, pit_speed_limit in km/h)
 INSERT INTO telemetry.tracks (track_id, name, display_name, country, track_length, pit_speed_limit) VALUES
     (0,  'MELBOURNE',           'Albert Park',                        'Australia',            5278, 80),
     (2,  'SHANGHAI',            'Shanghai International Circuit',     'China',                5451, 80),
@@ -42,6 +53,7 @@ INSERT INTO telemetry.tracks (track_id, name, display_name, country, track_lengt
     (39, 'SILVERSTONE_REVERSE', 'Silverstone Circuit (Reverse)',      'United Kingdom',       5891, 80),
     (40, 'AUSTRIA_REVERSE',     'Red Bull Ring (Reverse)',            'Austria',              4318, 80),
     (41, 'ZANDVOORT_REVERSE',   'Circuit Zandvoort (Reverse)',        'Netherlands',          4259, 80),
+    (42, 'MADRID',              'Madrid',                             'Spain',                NULL, NULL),
     (255,'UNKNOWN',             'Unknown Track',                      'Unknown',              NULL, NULL)
 ON CONFLICT (track_id) DO UPDATE SET
     track_length = COALESCE(telemetry.tracks.track_length, EXCLUDED.track_length),

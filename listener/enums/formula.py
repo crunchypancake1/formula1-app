@@ -10,3 +10,4 @@ class Formula(Enum):
     ESPORTS = 6
     F1_WORLD = 8
     F1_ELIMINATION = 9
+    F1_26 = 13

@@ -51,8 +51,8 @@ CREATE TABLE IF NOT EXISTS telemetry.car_frame (
     safety_car_delta REAL,
     num_pit_stops SMALLINT,
     pit_lane_timer_active BOOLEAN,
-    pit_lane_time_ms SMALLINT,
-    pit_stop_time_ms SMALLINT,
+    pit_lane_time_ms INTEGER,
+    pit_stop_time_ms INTEGER,
     pit_stop_should_serve_pen BOOLEAN,
 
     -- Car Status / Packet 7
@@ -72,9 +72,35 @@ CREATE TABLE IF NOT EXISTS telemetry.car_frame (
     ers_store_energy REAL,
     ers_deploy_mode SMALLINT,
     ers_deployed_this_lap REAL,
+    ers_harvest_limit_per_lap REAL,
+
+    -- Car Telemetry 2 / Packet 16 (2026 Season Pack; gated per-car on m_2026Regulations)
+    active_aero_mode SMALLINT,
+    active_aero_available BOOLEAN,
+    active_aero_activation_distance INTEGER,
+    overtake_available BOOLEAN,
+    overtake_active BOOLEAN,
+    overtake_activation_distance INTEGER,
+    is_2026_regulations BOOLEAN,
+    driving_wrong_way BOOLEAN,
 
     PRIMARY KEY (timestamp, session_uid, user_id)
 );
+
+-- 2026 Season Pack: pit_lane_time_ms/pit_stop_time_ms are uint16 source
+-- fields (up to 65535) that overflow SMALLINT — pre-existing bug, fixed
+-- while here. Idempotent upgrade path for pre-existing deployments.
+ALTER TABLE telemetry.car_frame ALTER COLUMN pit_lane_time_ms TYPE INTEGER;
+ALTER TABLE telemetry.car_frame ALTER COLUMN pit_stop_time_ms TYPE INTEGER;
+ALTER TABLE telemetry.car_frame ADD COLUMN IF NOT EXISTS ers_harvest_limit_per_lap REAL;
+ALTER TABLE telemetry.car_frame ADD COLUMN IF NOT EXISTS active_aero_mode SMALLINT;
+ALTER TABLE telemetry.car_frame ADD COLUMN IF NOT EXISTS active_aero_available BOOLEAN;
+ALTER TABLE telemetry.car_frame ADD COLUMN IF NOT EXISTS active_aero_activation_distance INTEGER;
+ALTER TABLE telemetry.car_frame ADD COLUMN IF NOT EXISTS overtake_available BOOLEAN;
+ALTER TABLE telemetry.car_frame ADD COLUMN IF NOT EXISTS overtake_active BOOLEAN;
+ALTER TABLE telemetry.car_frame ADD COLUMN IF NOT EXISTS overtake_activation_distance INTEGER;
+ALTER TABLE telemetry.car_frame ADD COLUMN IF NOT EXISTS is_2026_regulations BOOLEAN;
+ALTER TABLE telemetry.car_frame ADD COLUMN IF NOT EXISTS driving_wrong_way BOOLEAN;
 
 SELECT create_hypertable(
     'telemetry.car_frame', 'timestamp',

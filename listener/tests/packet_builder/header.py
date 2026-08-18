@@ -1,4 +1,4 @@
-"""Header builder — 29-byte packet header for every F1 25 UDP packet."""
+"""Header builder — 29-byte packet header for every F1 26 UDP packet."""
 
 import struct
 
@@ -14,11 +14,11 @@ def build_header(
     player_car_index: int = 0,
     secondary_player_car_index: int = 255,
 ) -> bytes:
-    """Build a 29-byte F1 25 packet header."""
+    """Build a 29-byte F1 26 (2026 Season Pack) packet header."""
     return struct.pack(
         _PACKET_HEADER_FORMAT,
-        2025,                          # packet_format
-        25,                            # game_year
+        2026,                          # packet_format
+        26,                            # game_year
         1,                             # game_major_version
         0,                             # game_minor_version
         1,                             # packet_version

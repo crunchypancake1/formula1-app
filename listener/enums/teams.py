@@ -2,7 +2,8 @@ from enum import Enum
 
 
 class Teams(Enum):
-    UNKNOWN = 255
+    UNKNOWN = 65535
+    LEGACY_UNKNOWN = 255
     MERCEDES = 0
     FERRARI = 1
     RED_BULL_RACING = 2
@@ -40,4 +41,28 @@ class Teams(Enum):
     HAAS_24 = 192
     MCLAREN_24 = 193
     SAUBER_24 = 194
+    # F2 2025 teams
+    ART_GP_25 = 465
+    CAMPOS_25 = 466
+    RODIN_MOTORSPORT_25 = 467
+    AIX_RACING_25 = 468
+    DAMS_25 = 469
+    HITECH_25 = 470
+    MP_MOTORSPORT_25 = 471
+    PREMA_25 = 472
+    TRIDENT_25 = 473
+    VAN_AMERSFOORT_RACING_25 = 474
+    INVICTA_25 = 475
+    # F1 2026 grid
+    MERCEDES_26 = 476
+    FERRARI_26 = 477
+    RED_BULL_RACING_26 = 478
+    WILLIAMS_26 = 479
+    ASTON_MARTIN_26 = 480
+    ALPINE_26 = 481
+    RB_26 = 482
+    HAAS_26 = 483
+    MCLAREN_26 = 484
+    AUDI_26 = 485
+    CADILLAC_26 = 486
 

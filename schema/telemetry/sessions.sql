@@ -13,10 +13,14 @@ CREATE TABLE IF NOT EXISTS telemetry.sessions (
     num_sessions_in_weekend SMALLINT NOT NULL,
     time_of_day SMALLINT,
     session_length SMALLINT,
+    start_reaction_time REAL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT ck_sessions_session_uid_not_empty CHECK (length(session_uid) > 0),
     CONSTRAINT uk_sessions_weekend_session UNIQUE (weekend_link, session_link)
 );
+
+-- 2026 Season Pack: local player's start reaction time (nullable).
+ALTER TABLE telemetry.sessions ADD COLUMN IF NOT EXISTS start_reaction_time REAL;
 
 CREATE INDEX IF NOT EXISTS idx_sessions_track ON telemetry.sessions(track_id, session_type);
 

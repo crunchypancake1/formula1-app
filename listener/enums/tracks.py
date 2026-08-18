@@ -3,7 +3,7 @@ from enum import Enum
 
 class TrackIDs(Enum):
     """
-    Track IDs from F1 25 UDP spec.
+    Track IDs from the F1 26 (2026 Season Pack) UDP spec.
 
     This enum is required for parsing UDP packets. Display names and countries
     are stored in the telemetry.tracks database table.
@@ -37,3 +37,4 @@ class TrackIDs(Enum):
     SILVERSTONE_REVERSE = 39
     AUSTRIA_REVERSE = 40
     ZANDVOORT_REVERSE = 41
+    MADRID = 42

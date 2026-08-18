@@ -3,6 +3,7 @@ from .car_damage import CarDamageData, CarDamagePacket, unpack_car_damage
 from .car_setup import CarSetupData, CarSetupPacket, unpack_car_setup
 from .car_status import CarStatusData, CarStatusPacket, unpack_car_status
 from .car_telemetry import CarTelemetryData, CarTelemetryPacket, unpack_car_telemetry
+from .car_telemetry2 import CarTelemetry2Data, CarTelemetry2Packet, unpack_car_telemetry2
 from .events import (
     Buttons,
     Collision,
@@ -97,6 +98,10 @@ __all__ = [
     "CarTelemetryPacket",
     "CarTelemetryData",
     "unpack_car_telemetry",
+    # Car Telemetry 2 packet (Packet 16)
+    "CarTelemetry2Packet",
+    "CarTelemetry2Data",
+    "unpack_car_telemetry2",
     # Car Status packet (Packet 7)
     "CarStatusPacket",
     "CarStatusData",

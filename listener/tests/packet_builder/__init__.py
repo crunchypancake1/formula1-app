@@ -3,6 +3,7 @@
 from .car_damage import build_car_damage_packet
 from .car_status import build_car_status_packet
 from .car_telemetry import build_car_telemetry_packet
+from .car_telemetry2 import build_car_telemetry2_packet
 from .events import (
     build_event_chqf,
     build_event_coll,
@@ -32,6 +33,7 @@ __all__ = [
     "build_motion_packet",
     "build_lap_data_packet",
     "build_car_telemetry_packet",
+    "build_car_telemetry2_packet",
     "build_car_status_packet",
     "build_event_ssta",
     "build_event_send",

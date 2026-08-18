@@ -2,10 +2,11 @@
 
 import struct
 
+from packets.constants import MAX_CARS
+
 from .header import build_header
 
-_CAR_STATUS_FORMAT = '<5B3fHHBBHBBBb3fB3fB'
-_MAX_CARS = 22
+_CAR_STATUS_FORMAT = '<5B3f2H2BH3Bb3fB4fB'
 
 
 def build_car_status_packet(
@@ -24,7 +25,7 @@ def build_car_status_packet(
     )
 
     body = b''
-    for i in range(_MAX_CARS):
+    for i in range(MAX_CARS):
         if i < num_drivers:
             body += struct.pack(
                 _CAR_STATUS_FORMAT,
@@ -48,8 +49,8 @@ def build_car_status_packet(
                 750.0, 120.0, 4000000.0,
                 # uint8: ersDeployMode
                 2,
-                # 3 float: ersHarvestedMGUK/MGUH, ersDeployedThisLap
-                200000.0, 300000.0, 100000.0,
+                # 4 float: ersHarvestedMGUK/MGUH, ersHarvestLimitPerLap, ersDeployedThisLap
+                200000.0, 300000.0, 150000.0, 100000.0,
                 # uint8: networkPaused
                 0,
             )
@@ -65,7 +66,7 @@ def build_car_status_packet(
                 0,
                 0.0, 0.0, 0.0,
                 0,
-                0.0, 0.0, 0.0,
+                0.0, 0.0, 0.0, 0.0,
                 0,
             )
 

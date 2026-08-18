@@ -6,12 +6,13 @@ import struct
 import pytest
 
 from packets.car_setup import unpack_car_setup
+from packets.constants import MAX_CARS
 from packets.packet_header import PACKET_HEADER_FORMAT_SIZE, unpack_packet_header
 
 from .packet_builder.header import build_header
 
 _CAR_SETUP_FORMAT = '<4B4f6B3B4fBf'
-_MAX_CARS = 22
+_MAX_CARS = MAX_CARS
 
 
 def _build_car_setup_bytes(
@@ -65,7 +66,7 @@ class TestCarSetupParser:
         header = unpack_packet_header(packet[:PACKET_HEADER_FORMAT_SIZE])
         body = packet[PACKET_HEADER_FORMAT_SIZE:]
         result = unpack_car_setup(header, body)
-        assert len(result.car_setups) == 22
+        assert len(result.car_setups) == MAX_CARS
 
     def test_setup_fields(self):
         packet = _build_full_packet(front_wing=10, rear_wing=8)

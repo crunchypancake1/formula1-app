@@ -1,6 +1,7 @@
 import os, sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from packets.constants import MAX_CARS
 from packets.lap_positions import unpack_lap_positions
 from packets.packet_header import PACKET_HEADER_FORMAT_SIZE, unpack_packet_header
 
@@ -25,7 +26,7 @@ class TestLapPositionsParser:
         assert result.lap_start == 5
 
     def test_positions_grid_shape(self):
-        lap_positions = {0: [1] + [0] * 21}
+        lap_positions = {0: [1] + [0] * (MAX_CARS - 1)}
         packet = build_lap_positions_packet(
             session_uid=1, session_time=100.0, frame_id=500,
             lap_positions=lap_positions,
@@ -35,7 +36,7 @@ class TestLapPositionsParser:
         result = unpack_lap_positions(header, body)
         assert len(result.positions) == 50
         for row in result.positions:
-            assert len(row) == 22
+            assert len(row) == MAX_CARS
 
     def test_position_values(self):
         lap_positions = {

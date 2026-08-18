@@ -66,4 +66,7 @@ def build_car_telemetry_packet(
                 0, 0, 0, 0,
             )
 
+    # Trailing packet-level fields after the per-car array.
+    body += struct.pack('<2Bb', 255, 255, 0)  # mfdPanelIndex, mfdPanelIndexSecondaryPlayer, suggestedGear
+
     return header + body

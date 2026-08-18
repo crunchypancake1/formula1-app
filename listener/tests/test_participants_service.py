@@ -27,7 +27,7 @@ def _make_participants_packet(session_uid=123, participants=None):
     if participants is None:
         participants = [_make_participant()]
     return SimpleNamespace(
-        header=SimpleNamespace(session_uid=session_uid),
+        header=SimpleNamespace(session_uid=session_uid, player_car_index=0),
         participants=participants,
         num_active_cars=len(participants),
     )

@@ -73,7 +73,7 @@ class SessionsRepository(RepositoryBase):
                 })
 
         def _zones_json(zones):
-            if zones is None:
+            if not zones:
                 return None
             return json.dumps([
                 {"zone_start": z.zone_start, "zone_end": z.zone_end} for z in zones

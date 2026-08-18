@@ -3,6 +3,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
 
+from packets.constants import MAX_CARS
 from packets.lap_data import unpack_lap_data
 from packets.packet_header import PACKET_HEADER_FORMAT_SIZE, unpack_packet_header
 
@@ -18,7 +19,7 @@ class TestLapDataParser:
         header = unpack_packet_header(packet[:PACKET_HEADER_FORMAT_SIZE])
         body = packet[PACKET_HEADER_FORMAT_SIZE:]
         result = unpack_lap_data(header, body)
-        assert len(result.lap_data) == 22
+        assert len(result.lap_data) == MAX_CARS
 
     def test_lap_number_and_distance(self):
         packet = build_lap_data_packet(

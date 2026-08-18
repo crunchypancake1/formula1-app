@@ -115,8 +115,8 @@ class TestSessionParser:
         assert result.active_aero_track_status == 1
         assert result.num_active_aero_zones_full == 8
         assert len(result.active_aero_zones_full) == 8
-        assert (result.active_aero_zones_full[0].zone_start,
-                result.active_aero_zones_full[0].zone_end) == (0.1, 0.2)
+        assert (round(result.active_aero_zones_full[0].zone_start, 4),
+                round(result.active_aero_zones_full[0].zone_end, 4)) == (0.1, 0.2)
         assert (round(result.active_aero_zones_full[5].zone_start, 4),
                 round(result.active_aero_zones_full[5].zone_end, 4)) == (0.6, 0.65)
 

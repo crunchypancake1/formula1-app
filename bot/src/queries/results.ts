@@ -1,9 +1,9 @@
-import type { Sql } from "../db";
 import type {
   ClassifiedDriver,
   QualifyingClassificationRow,
   RaceClassificationRow,
-} from "../schema";
+  Sql,
+} from "@f1/db";
 
 export type RaceResult = ClassifiedDriver<RaceClassificationRow>;
 export type QualifyingResult = ClassifiedDriver<QualifyingClassificationRow>;

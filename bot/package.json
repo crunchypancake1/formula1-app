@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@f1/db": "*",
     "hono": "^4.12.33",
     "postgres": "^3.4.5"
   },

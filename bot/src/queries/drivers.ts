@@ -1,5 +1,4 @@
-import type { Sql } from "../db";
-import type { UserRow } from "../schema";
+import type { Sql, UserRow } from "@f1/db";
 
 /** Pure over its query function so it can be tested without a database. */
 export async function readDriver(

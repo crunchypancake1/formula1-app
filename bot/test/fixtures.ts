@@ -6,7 +6,7 @@ import type {
   SessionRow,
   TyreStintRow,
   UserRow,
-} from "../src/schema";
+} from "@f1/db";
 import type { FastestLap } from "../src/queries/laps";
 
 /**

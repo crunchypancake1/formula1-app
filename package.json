@@ -1,0 +1,5 @@
+{
+  "name": "formula1-app",
+  "private": true,
+  "workspaces": ["bot", "web", "packages/*"]
+}

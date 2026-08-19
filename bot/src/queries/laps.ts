@@ -1,5 +1,4 @@
-import type { Sql } from "../db";
-import type { SessionBest, TyreStintRow } from "../schema";
+import type { SessionBest, Sql, TyreStintRow } from "@f1/db";
 
 export interface FastestLap {
   user_id: number;

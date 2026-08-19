@@ -17,19 +17,6 @@ export async function readLatestSession(
   return rows.length > 0 ? rows[0] : null;
 }
 
-export async function readSessionByUid(
-  query: () => Promise<SessionRow[]>
-): Promise<SessionRow | null> {
-  const rows = await query();
-  return rows.length > 0 ? rows[0] : null;
-}
-
-export async function readRecentSessions(
-  query: () => Promise<SessionRow[]>
-): Promise<SessionRow[]> {
-  return query();
-}
-
 export function latestSession(sql: Sql) {
   return readLatestSession(
     () => sql<SessionRow[]>`
@@ -37,27 +24,6 @@ export function latestSession(sql: Sql) {
         FROM telemetry.sessions
        ORDER BY session_start_utc DESC
        LIMIT 1
-    `
-  );
-}
-
-export function sessionByUid(sql: Sql, sessionUid: string) {
-  return readSessionByUid(
-    () => sql<SessionRow[]>`
-      SELECT *
-        FROM telemetry.sessions
-       WHERE session_uid = ${sessionUid}
-    `
-  );
-}
-
-export function recentSessions(sql: Sql, limit = 10) {
-  return readRecentSessions(
-    () => sql<SessionRow[]>`
-      SELECT *
-        FROM telemetry.sessions
-       ORDER BY session_start_utc DESC
-       LIMIT ${limit}
     `
   );
 }

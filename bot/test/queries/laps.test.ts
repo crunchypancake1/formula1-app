@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { readFastestValidLap, readSessionBests, readTyreStints } from "../../src/queries/laps";
-import { formatLapTime } from "../../src/schema";
+import { formatLapTime } from "@f1/db";
 import { fastestLap, sessionBest, tyreStint } from "../fixtures";
 
 describe("readFastestValidLap", () => {

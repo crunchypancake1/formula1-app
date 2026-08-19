@@ -1,4 +1,4 @@
-import type { Sql } from "./db";
+import type { Sql } from "./connection";
 
 /**
  * Columns that exist only in the F1 26 schema. Probing for these rather than
@@ -43,15 +43,29 @@ export async function checkSchema(
   return { ok: missing.length === 0, missing, latencyMs: Date.now() - started };
 }
 
+/**
+ * Postgres array literal syntax (`{a,b,c}`), built by hand rather than passed
+ * as a JS array. `fetch_types: false` (see `connection.ts`) means postgres.js
+ * never learns array type oids from the database, so a bound JS array
+ * serializes as a bare comma-joined string (`a,b,c`) instead of `{a,b,c}` —
+ * `ANY($1::text[])` then fails with "malformed array literal". Casting the
+ * SQL text alone doesn't fix it; the value itself has to already be in
+ * literal form when it reaches Postgres.
+ */
+function pgTextArray(values: readonly string[]): string {
+  const escaped = values.map((v) => `"${v.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`);
+  return `{${escaped.join(",")}}`;
+}
+
 export function schemaMarkerColumns(sql: Sql) {
-  const tables = SCHEMA_MARKERS.map(([table]) => table);
-  const columns = SCHEMA_MARKERS.map(([, column]) => column);
+  const tables = pgTextArray(SCHEMA_MARKERS.map(([table]) => table));
+  const columns = pgTextArray(SCHEMA_MARKERS.map(([, column]) => column));
 
   return sql<SchemaColumnRow[]>`
     SELECT table_name, column_name
       FROM information_schema.columns
      WHERE table_schema = 'telemetry'
-       AND table_name = ANY(${tables})
-       AND column_name = ANY(${columns})
+       AND table_name = ANY(${tables}::text[])
+       AND column_name = ANY(${columns}::text[])
   `;
 }

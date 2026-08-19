@@ -1,32 +1,44 @@
 import { describe, it, expect } from "vitest";
-import { checkHealth } from "../worker/health";
+import { checkSchema, SCHEMA_MARKERS, type SchemaColumnRow } from "../worker/health";
 
-describe("checkHealth", () => {
-  it("reports ok with the table count when the query succeeds", async () => {
-    const result = await checkHealth(async () => 26);
+const allMarkers = (): SchemaColumnRow[] =>
+  SCHEMA_MARKERS.map(([table_name, column_name]) => ({ table_name, column_name }));
+
+describe("checkSchema", () => {
+  it("passes when every 2026 marker column is present", async () => {
+    const result = await checkSchema(async () => allMarkers());
 
     expect(result.ok).toBe(true);
-    expect(result.telemetryTables).toBe(26);
+    expect(result.missing).toEqual([]);
     expect(result.latencyMs).toBeGreaterThanOrEqual(0);
   });
 
-  it("reports not ok when the schema is incomplete", async () => {
-    const result = await checkHealth(async () => 25);
+  it("names the markers a pre-2026 database is missing", async () => {
+    // The pre-upgrade schema called it entries.telemetry_setting and had no
+    // session_bests table at all.
+    const stale = allMarkers().filter(
+      (row) =>
+        !(row.table_name === "entries" && row.column_name === "telemetry_public") &&
+        row.table_name !== "session_bests"
+    );
+
+    const result = await checkSchema(async () => stale);
 
     expect(result.ok).toBe(false);
-    expect(result.telemetryTables).toBe(25);
+    expect(result.missing).toContain("entries.telemetry_public");
+    expect(result.missing).toContain("session_bests.best_lap_num");
   });
 
-  it("reports not ok when the schema is missing tables", async () => {
-    const result = await checkHealth(async () => 0);
+  it("fails against an empty database", async () => {
+    const result = await checkSchema(async () => []);
 
     expect(result.ok).toBe(false);
-    expect(result.telemetryTables).toBe(0);
+    expect(result.missing).toHaveLength(SCHEMA_MARKERS.length);
   });
 
   it("propagates the error when the query throws", async () => {
     await expect(
-      checkHealth(async () => {
+      checkSchema(async () => {
         throw new Error("connection refused");
       })
     ).rejects.toThrow("connection refused");

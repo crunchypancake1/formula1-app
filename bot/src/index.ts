@@ -1,8 +1,6 @@
 import { Hono } from "hono";
-import { connect } from "./db";
-import { checkSchema, schemaMarkerColumns } from "./health";
+import { checkSchema, connect, schemaMarkerColumns, type Env } from "@f1/db";
 import { latestSession } from "./queries/sessions";
-import type { Env } from "./types";
 
 const app = new Hono<{ Bindings: Env }>();
 

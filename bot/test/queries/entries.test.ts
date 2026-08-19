@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { byCarIndex, readRoster, restrictedDrivers } from "../../src/queries/entries";
-import { MAX_CARS } from "../../src/schema";
+import { MAX_CARS } from "@f1/db";
 import { rosterEntry } from "../fixtures";
 
 describe("readRoster", () => {

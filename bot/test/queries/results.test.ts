@@ -4,7 +4,7 @@ import {
   readQualifyingClassification,
   readRaceClassification,
 } from "../../src/queries/results";
-import { formatLapTime, parseMs } from "../../src/schema";
+import { formatLapTime, parseMs } from "@f1/db";
 import { qualifyingResult, raceResult } from "../fixtures";
 
 describe("readRaceClassification", () => {

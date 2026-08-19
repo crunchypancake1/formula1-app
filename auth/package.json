@@ -1,0 +1,22 @@
+{
+  "name": "formula1-auth",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "hono": "^4.12.33",
+    "jose": "^6.2.9"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.20.1",
+    "@cloudflare/workers-types": "^5.20260801.1",
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.10",
+    "wrangler": "^4.118.0"
+  }
+}

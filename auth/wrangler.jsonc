@@ -1,0 +1,31 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "formula1-auth",
+  "main": "./src/index.ts",
+  "compatibility_date": "2026-08-08",
+  // No nodejs_compat — jose and hono are edge-native, unlike bot/web's `postgres` dep.
+
+  "workers_dev": false,
+  "preview_urls": false,
+
+  "vars": {
+    "DISCORD_GUILD_ID": "",
+    "DISCORD_OAUTH_CLIENT_ID": "",
+    "ACCESS_CLIENT_ID": "",
+    "ACCESS_TEAM_DOMAIN": "",
+    "OIDC_ISSUER": "https://f1.crunchypancake.com/auth"
+  },
+
+  "secrets_store_secrets": [
+    { "binding": "DISCORD_BOT_TOKEN", "store_id": "d947ac5bb8ef4800ac46fc59128a1a09", "secret_name": "discord-bot-token" },
+    { "binding": "DISCORD_OAUTH_CLIENT_SECRET", "store_id": "d947ac5bb8ef4800ac46fc59128a1a09", "secret_name": "discord-oauth-client-secret" },
+    { "binding": "ACCESS_CLIENT_SECRET", "store_id": "d947ac5bb8ef4800ac46fc59128a1a09", "secret_name": "access-client-secret" },
+    { "binding": "OIDC_SIGNING_KEY", "store_id": "d947ac5bb8ef4800ac46fc59128a1a09", "secret_name": "oidc-signing-key" }
+  ],
+
+  "routes": [{ "pattern": "f1.crunchypancake.com/auth*", "zone_name": "crunchypancake.com" }],
+
+  "observability": {
+    "logs": { "enabled": true, "invocation_logs": true }
+  }
+}

@@ -71,6 +71,7 @@ startup. Hyperdrive holds no schema state (query caching is disabled and
 |---|---|---|
 | `formula1-web` | `f1.crunchypancake.com` | `GET /api/health` |
 | `formula1-bot` | `f1-bot.crunchypancake.com` | `GET /health` |
+| `formula1-auth` | `f1.crunchypancake.com/auth*` | *(none — OIDC endpoints only, see below)* |
 
 Both deploy from `master` via Workers Builds, one build connection each,
 scoped by root directory — a push to `master` redeploys them. Manual deploys
@@ -103,3 +104,56 @@ Discord channel. It needs:
 The bot's Discord REST calls are outbound-only (`bot/src/discord/client.ts`)
 — no gateway connection, so no `GatewayIntents` or persistent connection to
 manage.
+
+### Discord OIDC wrapper (`formula1-auth`)
+
+`formula1-auth` lets Cloudflare Access use Discord server membership as an
+identity provider for `f1.crunchypancake.com`. It runs the Discord OAuth
+dance, checks guild membership via the same bot token as `formula1-bot`,
+then mints its own signed JWT (`RS256`) that Access consumes as an OIDC
+`id_token`. It never touches the database — no Hyperdrive binding.
+
+It's deployed via a path-scoped **Route**
+(`f1.crunchypancake.com/auth*`, `auth/wrangler.jsonc`), not a Custom Domain
+— routes with path patterns take precedence over `web`'s Custom Domain on
+the same hostname, the same "same hostname, different Worker on a sub-path"
+pattern already used for `crunchypancake.com/mcp` (linkwarden).
+
+Secrets (Secrets Store, same store as the table above):
+
+| Secret name | Purpose | Create with |
+|---|---|---|
+| `discord-bot-token` | Guild-membership lookups — reuses the bot's existing token, read-only here | *(already exists, see bot setup above)* |
+| `discord-oauth-client-secret` | Discord OAuth2 code exchange | `npx wrangler secrets-store secret create d947ac5bb8ef4800ac46fc59128a1a09 --name discord-oauth-client-secret --scopes workers` |
+| `access-client-secret` | Value Access is configured with; `/auth/token` checks incoming requests against it (we invent this string, Access doesn't issue it) | same command, `--name access-client-secret` |
+| `oidc-signing-key` | RSA (RS256) PKCS8 private key PEM, signs the id_token plus the two internal-only relay-state/auth-code JWTs | same command, `--name oidc-signing-key` |
+
+Manual setup, in order (later steps need values from earlier ones):
+
+1. Generate an RSA keypair (e.g. `jose.generateKeyPair("RS256")` in a
+   throwaway script, or `openssl genrsa` + `openssl pkcs8`); store the
+   PKCS8 private key PEM as `oidc-signing-key`.
+2. Invent two arbitrary strings for `ACCESS_CLIENT_ID` /
+   `access-client-secret`. Put the client ID in `auth/wrangler.jsonc`'s
+   `vars.ACCESS_CLIENT_ID`, the secret in the Secrets Store.
+3. Discord Developer Portal → the bot's application → OAuth2 tab → add
+   redirect URI `https://f1.crunchypancake.com/auth/callback` → copy the
+   OAuth2 Client ID into `vars.DISCORD_OAUTH_CLIENT_ID`, the Client Secret
+   into `discord-oauth-client-secret`. `vars.DISCORD_GUILD_ID` should match
+   the bot's `DISCORD_GUILD_ID`.
+4. Deploy `auth/` (`npm run deploy` from `auth/`) so the endpoints exist.
+5. Cloudflare Zero Trust → Settings → Authentication → Add identity
+   provider → OpenID Connect: Auth URL
+   `https://f1.crunchypancake.com/auth/authorize`, Token URL `.../auth/token`,
+   Certificate URL `.../auth/jwks`, Client ID/Secret = the values from step 2.
+6. Zero Trust → Access → Applications: protect `f1.crunchypancake.com`,
+   **scoping the Application's path to exclude `/auth/*`** — same pattern
+   as `crunchypancake.com/mcp`. Getting this wrong causes a login loop:
+   Access would intercept its own IdP-callback traffic before it reaches
+   the wrapper.
+7. Access Policy: "Login Method is Discord" — no email allowlist needed,
+   guild membership is already the sole gate, enforced inside the wrapper
+   before any code is ever minted.
+8. Set `vars.ACCESS_TEAM_DOMAIN` to the `<team-name>.cloudflareaccess.com`
+   value and redeploy `auth/` — `/authorize` validates incoming
+   `redirect_uri`s against it (open-redirect guard).

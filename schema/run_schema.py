@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 # FK dependency chain:
 #   1. identity.users (no deps)
 #   2. telemetry tables (entries references identity.users)
+#   3. bot tables (discord_session_messages references telemetry.sessions)
 SCHEMA_EXECUTION_ORDER = {
     "identity": [
         "users.sql",
@@ -50,6 +51,10 @@ SCHEMA_EXECUTION_ORDER = {
         "lap_setups.sql",
         "tyre_sets.sql",
         "lobby_info.sql",
+    ],
+    "bot": [
+        "discord_weekends.sql",
+        "discord_session_messages.sql",
     ],
 }
 

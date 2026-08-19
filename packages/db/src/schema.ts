@@ -484,6 +484,36 @@ export interface FastestLapEventRow {
 }
 
 // ---------------------------------------------------------------------------
+// bot — Discord session-card state
+// ---------------------------------------------------------------------------
+
+/**
+ * bot.discord_weekends — the channel currently posting one race weekend's
+ * session cards. No FK to telemetry.sessions: weekend_link groups sessions,
+ * it does not name one, and a new weekend's channel is created before its
+ * first session exists.
+ */
+export interface DiscordWeekendRow {
+  weekend_link: string;
+  channel_id: string;
+  archived: boolean;
+  created_at: Date;
+}
+
+/**
+ * bot.discord_session_messages — one row per posted session card.
+ * `finalized` means the card holds the session's final result and will never
+ * be edited again.
+ */
+export interface DiscordSessionMessageRow {
+  session_uid: string;
+  channel_id: string;
+  message_id: string;
+  finalized: boolean;
+  created_at: Date;
+}
+
+// ---------------------------------------------------------------------------
 // Value helpers
 // ---------------------------------------------------------------------------
 

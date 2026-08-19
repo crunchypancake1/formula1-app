@@ -80,3 +80,26 @@ The health endpoints verify connectivity end to end (Worker → Hyperdrive →
 tunnel → Postgres) and probe for F1 26 marker columns
 (`packages/db/src/health.ts`), so they return 503 with the missing markers
 listed if the database schema is stale.
+
+### Bot Discord session cards
+
+`formula1-bot` runs a 1-minute Cron Trigger (`bot/wrangler.jsonc`'s
+`triggers.crons`) that posts and finalizes race-weekend session cards into a
+Discord channel. It needs:
+
+- `DISCORD_GUILD_ID` (`vars` in `bot/wrangler.jsonc`) — the target server's id.
+  Currently blank; set it before deploying.
+- `DISCORD_CHANNEL_NAME` (`vars`, defaults to `active-session`) — the channel
+  the bot creates/reuses for the current weekend.
+- `DISCORD_ARCHIVE_CATEGORY_ID` (optional `vars`, unset by default) — a
+  category to move a weekend's channel into once archived.
+- `DISCORD_BOT_TOKEN` — the first binding against the shared Secrets Store
+  (`d947ac5bb8ef4800ac46fc59128a1a09`, see the table above). Create it once
+  with `npx wrangler secrets-store secret create <store-id> --name
+  discord-bot-token --scopes workers`, then paste in a bot token from the
+  Discord Developer Portal with `Manage Channels` + `Send Messages` +
+  `Manage Messages` permissions in that guild.
+
+The bot's Discord REST calls are outbound-only (`bot/src/discord/client.ts`)
+— no gateway connection, so no `GatewayIntents` or persistent connection to
+manage.

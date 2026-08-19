@@ -8,11 +8,30 @@
   "workers_dev": false,
   "preview_urls": false,
 
+  // 1-minute is Cron Triggers' minimum granularity — the reason session
+  // cards are finalize-only rather than continuously re-edited.
+  "triggers": {
+    "crons": ["* * * * *"]
+  },
+
+  "vars": {
+    "DISCORD_GUILD_ID": "",
+    "DISCORD_CHANNEL_NAME": "active-session"
+  },
+
   "hyperdrive": [
     {
       "binding": "HYPERDRIVE",
       "id": "ded8933c250e438cac3a2d76b2f97b5e",
       "localConnectionString": "postgresql://postgres:changeme@localhost:7005/f1_app"
+    }
+  ],
+
+  "secrets_store_secrets": [
+    {
+      "binding": "DISCORD_BOT_TOKEN",
+      "store_id": "d947ac5bb8ef4800ac46fc59128a1a09",
+      "secret_name": "discord-bot-token"
     }
   ],
 

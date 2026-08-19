@@ -51,6 +51,19 @@ export function sessionByUid(sql: Sql, sessionUid: string) {
   );
 }
 
+/** The most recently run session within one weekend — used to name its archive channel. */
+export function latestSessionInWeekend(sql: Sql, weekendLink: string) {
+  return readLatestSession(
+    () => sql<SessionRow[]>`
+      SELECT *
+        FROM telemetry.sessions
+       WHERE weekend_link = ${weekendLink}
+       ORDER BY session_start_utc DESC
+       LIMIT 1
+    `
+  );
+}
+
 export function recentSessions(sql: Sql, limit = 10) {
   return readRecentSessions(
     () => sql<SessionRow[]>`

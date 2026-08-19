@@ -1,9 +1,13 @@
 import type {
+  DiscordSessionMessageRow,
+  DiscordWeekendRow,
   QualifyingClassificationRow,
   RaceClassificationRow,
   RosterEntry,
   SessionBest,
   SessionRow,
+  SessionTimelineRow,
+  TrackRow,
   TyreStintRow,
   UserRow,
 } from "@f1/db";
@@ -129,6 +133,74 @@ export function tyreStint(overrides: Partial<TyreStintRow> = {}): TyreStintRow {
     end_lap: 20,
     actual_compound: "C3",
     visual_compound: "MEDIUM",
+    ...overrides,
+  };
+}
+
+export function timelineRow(overrides: Partial<SessionTimelineRow> = {}): SessionTimelineRow {
+  return {
+    timestamp: new Date("2026-08-19T18:10:00Z"),
+    session_uid: "1000000000000000001",
+    session_time: 600,
+    overall_frame_identifier: 15000,
+    session_time_left: 4800,
+    total_laps: 44,
+    weather_state: "CLEAR",
+    weather_track_temp: 32,
+    weather_air_temp: 24,
+    safety_car_status: "NONE",
+    marshal_zone_flags: null,
+    num_safety_car_periods: null,
+    num_virtual_safety_car_periods: null,
+    num_red_flag_periods: null,
+    game_paused: null,
+    is_spectating: null,
+    spectator_car_index: null,
+    pit_stop_window_ideal_lap: null,
+    pit_stop_window_latest_lap: null,
+    pit_stop_rejoin_position: null,
+    ...overrides,
+  } as SessionTimelineRow;
+}
+
+export function trackRow(overrides: Partial<TrackRow> = {}): TrackRow {
+  return {
+    track_id: 10,
+    name: "SILVERSTONE",
+    display_name: "Silverstone",
+    country: "United Kingdom",
+    track_length: 5891,
+    sector2_start: null,
+    sector3_start: null,
+    marshal_zones: null,
+    pit_speed_limit: null,
+    active_aero_track_status: null,
+    active_aero_zones_full: null,
+    active_aero_zones_partial: null,
+    drs_zones: null,
+    ...overrides,
+  } as TrackRow;
+}
+
+export function discordWeekendRow(overrides: Partial<DiscordWeekendRow> = {}): DiscordWeekendRow {
+  return {
+    weekend_link: "weekend-1",
+    channel_id: "channel-1",
+    archived: false,
+    created_at: new Date("2026-08-19T18:00:00Z"),
+    ...overrides,
+  };
+}
+
+export function discordSessionMessageRow(
+  overrides: Partial<DiscordSessionMessageRow> = {}
+): DiscordSessionMessageRow {
+  return {
+    session_uid: "1000000000000000001",
+    channel_id: "channel-1",
+    message_id: "message-1",
+    finalized: false,
+    created_at: new Date("2026-08-19T18:00:00Z"),
     ...overrides,
   };
 }

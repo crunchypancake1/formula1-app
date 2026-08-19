@@ -34,3 +34,10 @@ class BoundedDict(Generic[_K, _V]):
 
     def __len__(self) -> int:
         return len(self._data)
+
+    def keys(self) -> list[_K]:
+        """Snapshot of the current keys, safe to iterate while mutating the dict."""
+        return list(self._data)
+
+    def pop(self, key: _K, default: _V | None = None) -> _V | None:
+        return self._data.pop(key, default)

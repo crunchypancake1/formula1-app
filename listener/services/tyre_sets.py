@@ -1,11 +1,11 @@
-"""Tyre sets service — caches available tyre sets per car, writes on lap completion."""
+"""Tyre sets service — caches a car's available sets, writes a snapshot on lap completion."""
 
 import logging
-from typing import Optional
+from typing import AbstractSet, Optional
 
 from database.repositories.base import safe_enum_name
 from database.repositories.tyre_sets import TyreSetsInventoryRepository
-from enums import ActualTyreCompound, VisualTyreCompound
+from enums import ActualTyreCompound, SessionTypeIDs, VisualTyreCompound
 from utils.bounded_dict import BoundedDict
 
 
@@ -13,8 +13,13 @@ class TyreSetsService:
     """
     Handles Tyre Sets packets (Packet 12).
 
-    Caches available tyre sets per car in memory. On lap completion,
-    writes a snapshot of all available sets for that driver.
+    The packet cycles one car at a time, so sets are cached per car and written
+    as a snapshot when that driver completes a lap.
+
+    The whole packet is withheld for a driver whose Your Telemetry setting is
+    Restricted — it arrives zero-filled. Those cars are skipped explicitly
+    rather than relying on the zeroes filtering themselves out, so no snapshot
+    row can ever claim a restricted driver has no tyres left.
     """
 
     def __init__(
@@ -25,35 +30,39 @@ class TyreSetsService:
         self._tyre_sets_repo = tyre_sets_repo
         self._logger = logger or logging.getLogger(__name__)
         # (session_uid, car_index) -> list of available set tuples
-        self._cached_sets: BoundedDict = BoundedDict(500)
+        self._cached_sets: BoundedDict[tuple, list] = BoundedDict(500)
 
-    def handle_tyre_sets_packet(self, packet, user_map: dict[int, int]):
-        """
-        Cache available tyre sets from a Tyre Sets packet.
-        Called at 20Hz cycling through cars. Only caches sets where available == 1.
-        """
+    def handle_tyre_sets_packet(
+        self,
+        packet,
+        user_map: dict[int, int],
+        restricted_indices: Optional[AbstractSet[int]] = None,
+    ):
+        """Cache the available tyre sets for the car this packet describes."""
         session_uid = str(packet.header.session_uid)
         car_idx = packet.car_idx
 
         if car_idx not in user_map:
             return
 
+        if restricted_indices and car_idx in restricted_indices:
+            return
+
         available_sets = []
-        for tyre_set in packet.tyre_set_data:
+        for set_index, tyre_set in enumerate(packet.tyre_set_data):
             if tyre_set.available != 1:
                 continue
 
-            actual = safe_enum_name(ActualTyreCompound, tyre_set.actual_compound, self._logger)
-            visual = safe_enum_name(VisualTyreCompound, tyre_set.visual_compound, self._logger)
-
             available_sets.append((
-                actual,
-                visual,
+                set_index,
+                safe_enum_name(ActualTyreCompound, tyre_set.actual_compound, self._logger),
+                safe_enum_name(VisualTyreCompound, tyre_set.visual_compound, self._logger),
                 tyre_set.wear,
                 tyre_set.life_span,
                 tyre_set.usable_life,
+                safe_enum_name(SessionTypeIDs, tyre_set.recommended_session, self._logger),
                 tyre_set.lap_delta_time,
-                bool(tyre_set.fitted),
+                set_index == packet.fitted_idx,
             ))
 
         self._cached_sets[(session_uid, car_idx)] = available_sets
@@ -65,20 +74,15 @@ class TyreSetsService:
         car_index: int,
         lap_number: int,
     ):
-        """
-        Called when a lap is completed. Writes the cached available tyre sets
-        snapshot to the database.
-        """
+        """Write the cached snapshot of available sets for a completed lap."""
         cached = self._cached_sets.get((session_uid, car_index))
         if not cached:
             return
 
-        rows = []
-        for actual, visual, wear, life_span, usable_life, delta, fitted in cached:
-            rows.append((
-                session_uid, user_id, lap_number,
-                actual, visual, wear, life_span, usable_life, delta, fitted,
-            ))
+        rows = [
+            (session_uid, user_id, lap_number, *fields)
+            for fields in cached
+        ]
 
         if rows:
             self._tyre_sets_repo.insert_snapshot(rows)

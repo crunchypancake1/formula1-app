@@ -1,10 +1,18 @@
--- Car Damage data (Packet 10) — 10Hz, all drivers
--- References car_frame by (session_uid, user_id, overall_frame_identifier)
+-- Car Damage (Packet 10) — 10Hz. Joins telemetry.car_frame on
+-- (session_uid, user_id, overall_frame_identifier).
+--
+-- Split out from car_frame because the game withholds every field here for a
+-- driver whose Your Telemetry setting is Restricted. Rather than store ~30
+-- fake zeroes per frame, the listener omits the row entirely for those cars —
+-- so "no row" means "withheld", not "undamaged".
+--
+-- timestamp is derived (sessions.session_start_utc + session_time), which is
+-- what lets the primary key de-duplicate a re-delivered frame.
 
 CREATE TABLE IF NOT EXISTS telemetry.car_frame_damage (
     timestamp               TIMESTAMPTZ NOT NULL,
     session_uid             VARCHAR(255) NOT NULL,
-    user_id               INTEGER NOT NULL,
+    user_id                 INTEGER NOT NULL,
     session_time            FLOAT NOT NULL,
     overall_frame_identifier INTEGER NOT NULL,
 
@@ -60,7 +68,7 @@ CREATE TABLE IF NOT EXISTS telemetry.car_frame_damage (
     engine_blown            BOOLEAN,
     engine_seized           BOOLEAN,
 
-    PRIMARY KEY (timestamp, session_uid, user_id)
+    PRIMARY KEY (timestamp, session_uid, user_id, overall_frame_identifier)
 );
 
 SELECT create_hypertable(

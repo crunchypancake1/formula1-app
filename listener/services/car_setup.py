@@ -1,4 +1,4 @@
-"""Car setup service — caches setups for all drivers, writes on lap completion."""
+"""Car setup service — caches setups, writes them on lap completion."""
 
 import hashlib
 import logging
@@ -7,15 +7,20 @@ from typing import Optional
 
 from database.repositories.car_setups import CarSetupsRepository
 from database.repositories.lap_setups import LapSetupsRepository
+from utils.bounded_dict import BoundedDict
 
 
 class CarSetupService:
     """
     Handles Car Setup packets (Packet 5).
 
-    Caches every driver's current setup in memory. On lap completion,
-    computes a hash and deduplicates against the car_setups library.
-    Links the completed lap to the setup via lap_setups.
+    Online you only ever receive your own setup: other players' entries arrive
+    as all zeroes regardless of their telemetry setting, and spectators get
+    none at all. A blank setup is therefore never persisted — a row of zeroes
+    would read as a real (and absurd) setup rather than as missing data.
+
+    Real setups are deduplicated into a library by hash + track + driver, and
+    each completed lap is linked to the setup it was driven on.
     """
 
     _HASH_FORMAT = '<4B4f6B3B4fBf'
@@ -29,19 +34,18 @@ class CarSetupService:
         self._car_setups_repo = car_setups_repo
         self._lap_setups_repo = lap_setups_repo
         self._logger = logger or logging.getLogger(__name__)
-        # (session_uid, user_id) -> (setup_hash_bytes, setup_fields_tuple, telemetry_available)
-        self._cached_setup: dict[tuple[str, int], tuple[bytes, tuple, bool]] = {}
+        # (session_uid, user_id) -> (setup_hash, setup_fields, next_front_wing_value)
+        self._cached_setup: BoundedDict[tuple[str, int], tuple] = BoundedDict(500)
 
     @staticmethod
-    def _is_telemetry_available(fields: tuple) -> bool:
+    def _is_real_setup(fields: tuple) -> bool:
+        """An all-zero setup is the game withholding data, not a setup."""
         return any(v != 0 for v in fields)
 
     def handle_car_setup_packet(self, packet, session_uid: str, user_map: dict[int, int]):
-        """
-        Cache every driver's setup from a Car Setup packet.
-        Called at 2Hz. Loops all 22 car slots.
-        """
+        """Cache each known driver's setup from a Car Setup packet."""
         num_cars = len(packet.car_setups)
+        player_index = packet.header.player_car_index
 
         for car_index, user_id in user_map.items():
             if car_index >= num_cars:
@@ -63,34 +67,31 @@ class CarSetupService:
                 setup.ballast, setup.fuel_load,
             )
 
-            packed = struct.pack(self._HASH_FORMAT, *fields)
-            setup_hash = hashlib.sha256(packed).digest()
-            telemetry_available = self._is_telemetry_available(fields)
+            if not self._is_real_setup(fields):
+                continue
 
-            self._cached_setup[(session_uid, user_id)] = (setup_hash, fields, telemetry_available)
+            setup_hash = hashlib.sha256(struct.pack(self._HASH_FORMAT, *fields)).digest()
+
+            # m_nextFrontWingValue is packet-level and describes the local
+            # player only, so it is meaningless for anyone else.
+            next_front_wing = (
+                packet.next_front_wing_value if car_index == player_index else None
+            )
+
+            self._cached_setup[(session_uid, user_id)] = (setup_hash, fields, next_front_wing)
 
     def on_lap_complete(self, session_uid: str, user_id: int, lap_number: int, track_id: int):
-        """
-        Called when a lap is completed. Writes the cached setup to DB
-        (deduplicated) and links the lap to it.
-        """
+        """Persist the cached setup (deduplicated) and link the completed lap to it."""
         cached = self._cached_setup.get((session_uid, user_id))
         if cached is None:
             return
 
-        setup_hash, fields, telemetry_available = cached
-
-        # Restricted/blank setup (other players in MP, spectators): the
-        # game sends an all-zeros setup that can never be a usable row —
-        # skip persistence entirely rather than writing an unusable row.
-        if not telemetry_available:
-            return
+        setup_hash, fields, next_front_wing = cached
 
         setup_id = self._car_setups_repo.upsert_setup(
             setup_hash, track_id, fields,
             user_id=user_id,
             session_uid=session_uid,
-            telemetry_available=telemetry_available,
         )
         if setup_id is None:
             self._logger.warning(
@@ -99,7 +100,9 @@ class CarSetupService:
             )
             return
 
-        self._lap_setups_repo.insert_lap_setup(session_uid, user_id, lap_number, setup_id)
+        self._lap_setups_repo.insert_lap_setup(
+            session_uid, user_id, lap_number, setup_id, next_front_wing
+        )
         self._logger.debug(
             "Linked lap %d to setup_id %d (session %s, user %d)",
             lap_number, setup_id, session_uid, user_id,

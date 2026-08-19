@@ -56,6 +56,8 @@ def _build_full_packet(**car0_kwargs):
         tyres_pressure=(0.0, 0.0, 0.0, 0.0),
     )
     body += zero_car * (MAX_CARS - 1)
+    # Packet-level tail: mfdPanelIndex, mfdPanelIndexSecondaryPlayer, suggestedGear
+    body += struct.pack('<2Bb', 255, 255, 0)
     return header + body
 
 
@@ -99,6 +101,24 @@ class TestCarTelemetryParser:
         car = result.car_telemetry_data[0]
         assert car.surface_type == (1, 2, 3, 4)
         assert len(car.surface_type) == 4
+
+    def test_rev_lights_parsed(self):
+        packet = _build_full_packet()
+        header = unpack_packet_header(packet[:PACKET_HEADER_FORMAT_SIZE])
+        body = packet[PACKET_HEADER_FORMAT_SIZE:]
+        result = unpack_car_telemetry(header, body)
+        assert result.car_telemetry_data[0].rev_lights_percent == 50
+        assert result.car_telemetry_data[0].rev_lights_bit_value == 0
+
+    def test_player_only_tail_fields(self):
+        """mfd panel indices and suggested gear describe the local player only."""
+        packet = _build_full_packet()
+        header = unpack_packet_header(packet[:PACKET_HEADER_FORMAT_SIZE])
+        body = packet[PACKET_HEADER_FORMAT_SIZE:]
+        result = unpack_car_telemetry(header, body)
+        assert result.mfd_panel_index == 255
+        assert result.mfd_panel_index_secondary_player == 255
+        assert result.suggested_gear == 0
 
     def test_engine_temperature_uint8_round_trip(self):
         # engine_temperature narrowed from uint16 to uint8 -- assert it

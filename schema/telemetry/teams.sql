@@ -1,14 +1,15 @@
--- Teams lookup table for reference data
+-- Teams lookup table for reference data.
+-- team_id is uint16 on the wire; 65535 is the "no team selected" sentinel.
+--
+-- The listener upserts any team_id it has not seen before (see
+-- EntriesRepository.ensure_teams), so an id added by a game patch never blocks
+-- a session from being recorded. The seed below is the known F1 26 table.
 CREATE TABLE IF NOT EXISTS telemetry.teams (
     team_id INTEGER PRIMARY KEY,
     name VARCHAR(100) NOT NULL UNIQUE,
     display_name VARCHAR(100) NOT NULL
 );
 
--- 2026 Season Pack: team_id can now exceed SMALLINT range (sentinel 65535).
-ALTER TABLE telemetry.teams ALTER COLUMN team_id TYPE INTEGER;
-
--- Insert all known F1 25 / F1 26 teams
 INSERT INTO telemetry.teams (team_id, name, display_name) VALUES
     (0, 'MERCEDES', 'Mercedes'),
     (1, 'FERRARI', 'Ferrari'),
@@ -39,7 +40,7 @@ INSERT INTO telemetry.teams (team_id, name, display_name) VALUES
     (166, 'TRIDENT_24', 'Trident'),
     (167, 'VAN_AMERSFOORT_RACING_24', 'Van Amersfoort Racing'),
     (168, 'INVICTA_24', 'Invicta'),
-    -- Alternative team IDs
+    -- 2024 car variants
     (185, 'MERCEDES_24', 'Mercedes 24'),
     (186, 'FERRARI_24', 'Ferrari 24'),
     (187, 'RED_BULL_RACING_24', 'Red Bull Racing 24'),
@@ -50,7 +51,6 @@ INSERT INTO telemetry.teams (team_id, name, display_name) VALUES
     (192, 'HAAS_24', 'Haas 24'),
     (193, 'MCLAREN_24', 'McLaren 24'),
     (194, 'SAUBER_24', 'Sauber 24'),
-    (255, 'LEGACY_UNKNOWN', 'Unknown'),
     -- F2 2025 teams
     (465, 'ART_GP_25', 'Art GP ''25'),
     (466, 'CAMPOS_25', 'Campos ''25'),

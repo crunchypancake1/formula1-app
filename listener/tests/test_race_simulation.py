@@ -6,7 +6,13 @@ data landed correctly in the database.
 
 import pytest
 
-from .scenario import NUM_DRIVERS, SESSION_UID, TOTAL_LAPS, generate_race_scenario
+from .scenario import (
+    NUM_DRIVERS,
+    RESTRICTED_CAR_INDICES,
+    SESSION_UID,
+    TOTAL_LAPS,
+    generate_race_scenario,
+)
 
 _SESSION_UID = str(SESSION_UID)
 
@@ -313,3 +319,252 @@ class TestRaceSimulation:
         )
         event_codes = {row[0] for row in rows}
         assert "RCWN" in event_codes, "RCWN (race winner) event not found"
+
+    # --- Restricted telemetry -------------------------------------------------
+
+    def _restricted_user_ids(self, db_client):
+        rows = self._query_all(
+            db_client,
+            """
+            SELECT user_id FROM telemetry.entries
+            WHERE session_uid = %s AND car_index = ANY(%s)
+            """,
+            (_SESSION_UID, sorted(RESTRICTED_CAR_INDICES)),
+        )
+        return [r[0] for r in rows]
+
+    def test_restricted_drivers_recorded_as_restricted(self, db_client):
+        """The roster records who had Your Telemetry set to Restricted."""
+        restricted = self._restricted_user_ids(db_client)
+        assert len(restricted) == len(RESTRICTED_CAR_INDICES)
+
+        row = self._query_one(
+            db_client,
+            """
+            SELECT COUNT(*) FROM telemetry.entries
+            WHERE session_uid = %s AND telemetry_public = false
+            """,
+            (_SESSION_UID,),
+        )
+        assert row[0] == len(RESTRICTED_CAR_INDICES)
+
+    def test_restricted_car_status_is_null_not_zero(self, db_client):
+        """
+        A Restricted driver's fuel and ERS arrive zeroed from the game. Those
+        must be stored as NULL — a 0.0 fuel load is indistinguishable from a
+        real reading and would be believed.
+        """
+        restricted = self._restricted_user_ids(db_client)
+        row = self._query_one(
+            db_client,
+            """
+            SELECT COUNT(*)
+            FROM telemetry.car_frame
+            WHERE session_uid = %s AND user_id = ANY(%s)
+              AND (fuel_in_tank IS NOT NULL OR fuel_capacity IS NOT NULL
+                   OR ers_store_energy IS NOT NULL OR front_brake_bias IS NOT NULL
+                   OR ers_harvested_this_lap_mguk IS NOT NULL
+                   OR engine_power_ice IS NOT NULL)
+            """,
+            (_SESSION_UID, restricted),
+        )
+        assert row[0] == 0, "Restricted driver has non-NULL withheld car status data"
+
+    def test_public_car_status_is_populated(self, db_client):
+        """Public drivers keep every Car Status field, including the new ones."""
+        row = self._query_one(
+            db_client,
+            """
+            SELECT COUNT(*)
+            FROM telemetry.car_frame
+            WHERE session_uid = %s AND user_id <> ALL(%s)
+              AND fuel_in_tank IS NOT NULL AND fuel_capacity IS NOT NULL
+              AND ers_harvested_this_lap_mguk IS NOT NULL
+              AND ers_harvested_this_lap_mguh IS NOT NULL
+              AND engine_power_ice IS NOT NULL AND engine_power_mguk IS NOT NULL
+              AND max_rpm IS NOT NULL
+            """,
+            (_SESSION_UID, self._restricted_user_ids(db_client)),
+        )
+        assert row[0] > 0, "No public driver has fully populated car status"
+
+    def test_restricted_drivers_have_no_damage_rows(self, db_client):
+        """
+        The whole Car Damage packet is withheld for a Restricted driver, so the
+        row is omitted entirely rather than written as ~30 zeroes.
+        """
+        restricted = self._restricted_user_ids(db_client)
+        row = self._query_one(
+            db_client,
+            """
+            SELECT COUNT(*) FROM telemetry.car_frame_damage
+            WHERE session_uid = %s AND user_id = ANY(%s)
+            """,
+            (_SESSION_UID, restricted),
+        )
+        assert row[0] == 0, "Restricted driver has car_frame_damage rows"
+
+        row = self._query_one(
+            db_client,
+            """
+            SELECT COUNT(*) FROM telemetry.car_frame_damage
+            WHERE session_uid = %s AND user_id <> ALL(%s)
+            """,
+            (_SESSION_UID, restricted),
+        )
+        assert row[0] > 0, "No damage rows for the public drivers either"
+
+    # --- Packet 16 ------------------------------------------------------------
+
+    def test_car_telemetry2_stored(self, db_client):
+        """Packet 16 lands, aero and boost included."""
+        row = self._query_one(
+            db_client,
+            """
+            SELECT COUNT(is_2026_regulations), COUNT(active_aero_mode),
+                   COUNT(overtake_activation_distance)
+            FROM telemetry.car_frame
+            WHERE session_uid = %s
+            """,
+            (_SESSION_UID,),
+        )
+        regs, aero, overtake = row
+        assert regs > 0, "is_2026_regulations never stored"
+        assert aero > 0 and overtake > 0, "Packet 16 aero/boost fields never stored"
+
+    def test_regulations_flag_null_only_without_packet_16(self, db_client):
+        """
+        NULL in is_2026_regulations must mean "packet 16 never arrived for this
+        frame" and nothing else — a car we did hear from always gets a real
+        true/false, so a classic car reads False rather than unknown.
+        """
+        row = self._query_one(
+            db_client,
+            """
+            SELECT COUNT(*) FROM telemetry.car_frame
+            WHERE session_uid = %s
+              AND is_2026_regulations IS NULL
+              AND (active_aero_mode IS NOT NULL OR driving_wrong_way IS NOT NULL)
+            """,
+            (_SESSION_UID,),
+        )
+        assert row[0] == 0, "Rows carry packet-16 data but no regulations flag"
+
+    # --- Lap Data coverage ----------------------------------------------------
+
+    def test_lap_data_extras_stored(self, db_client):
+        """Warnings, penalties and lap validity live only in Lap Data."""
+        row = self._query_one(
+            db_client,
+            """
+            SELECT COUNT(current_lap_invalid), COUNT(total_warnings),
+                   COUNT(corner_cutting_warnings), COUNT(grid_position),
+                   COUNT(last_lap_time_ms)
+            FROM telemetry.car_frame
+            WHERE session_uid = %s
+            """,
+            (_SESSION_UID,),
+        )
+        invalid, warnings, corner_cuts, grid, last_lap = row
+        assert invalid > 0 and warnings > 0 and corner_cuts > 0
+        assert grid > 0, "grid_position never stored"
+
+    # --- Frame identity -------------------------------------------------------
+
+    def test_frames_are_deduplicated(self, db_client):
+        """
+        The frame key is (timestamp, session_uid, user_id, frame) with a derived
+        timestamp, so one frame can only ever produce one row per driver.
+        """
+        row = self._query_one(
+            db_client,
+            """
+            SELECT COUNT(*) FROM (
+                SELECT session_uid, user_id, overall_frame_identifier
+                FROM telemetry.car_frame
+                WHERE session_uid = %s
+                GROUP BY 1, 2, 3
+                HAVING COUNT(*) > 1
+            ) duplicates
+            """,
+            (_SESSION_UID,),
+        )
+        assert row[0] == 0, "Duplicate (session, driver, frame) rows in car_frame"
+
+    def test_session_start_anchor_recorded(self, db_client):
+        """Frame timestamps are derived from this anchor, so it must exist."""
+        row = self._query_one(
+            db_client,
+            "SELECT session_start_utc FROM telemetry.sessions WHERE session_uid = %s",
+            (_SESSION_UID,),
+        )
+        assert row is not None and row[0] is not None
+
+    # --- Session packet coverage ----------------------------------------------
+
+    def test_session_settings_stored(self, db_client):
+        """The session's rules and assists are recorded, not just its identity."""
+        row = self._query_one(
+            db_client,
+            """
+            SELECT equal_car_performance, parc_ferme_rules, corner_cutting_stringency,
+                   safety_car, formation_lap, ai_difficulty, weekend_structure
+            FROM telemetry.sessions WHERE session_uid = %s
+            """,
+            (_SESSION_UID,),
+        )
+        assert row is not None
+        assert all(v is not None for v in row), f"Unset session settings: {row}"
+        assert len(row[6]) > 0, "weekend_structure not stored"
+
+    def test_timeline_records_live_state(self, db_client):
+        """Race-control state that changes during the session lands on the timeline."""
+        row = self._query_one(
+            db_client,
+            """
+            SELECT COUNT(*), COUNT(marshal_zone_flags), COUNT(num_safety_car_periods)
+            FROM telemetry.session_timeline WHERE session_uid = %s
+            """,
+            (_SESSION_UID,),
+        )
+        total, flags, sc_periods = row
+        assert total > 0
+        assert flags == total and sc_periods == total
+
+    def test_session_bests_recorded(self, db_client):
+        """Session History reports which lap each best was set on."""
+        row = self._query_one(
+            db_client,
+            "SELECT COUNT(*) FROM telemetry.session_bests WHERE session_uid = %s",
+            (_SESSION_UID,),
+        )
+        assert row[0] > 0, "No session_bests rows"
+
+    def test_weather_forecast_keeps_target_session(self, db_client):
+        """A forecast sample says which session it predicts for."""
+        row = self._query_one(
+            db_client,
+            """
+            SELECT COUNT(*), COUNT(forecast_session_type)
+            FROM telemetry.weather_forecast WHERE session_uid = %s
+            """,
+            (_SESSION_UID,),
+        )
+        assert row[0] > 0 and row[1] == row[0]
+
+    # --- Participants coverage ------------------------------------------------
+
+    def test_entry_identity_fields_stored(self, db_client):
+        """Platform and network identity come only from the Participants packet."""
+        row = self._query_one(
+            db_client,
+            """
+            SELECT COUNT(*) FROM telemetry.entries
+            WHERE session_uid = %s
+              AND platform IS NOT NULL AND driver_id IS NOT NULL
+              AND network_id IS NOT NULL AND show_online_names IS NOT NULL
+              AND num_livery_colors IS NOT NULL
+            """,
+            (_SESSION_UID,),
+        )
+        assert row[0] == NUM_DRIVERS

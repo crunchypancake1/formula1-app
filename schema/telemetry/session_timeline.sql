@@ -1,5 +1,9 @@
--- Session timeline table (time-series session state)
--- Uses TimescaleDB hypertable for efficient time-range queries and compression
+-- Session timeline (source: Session packet, Packet 1) — the live half of the
+-- session state, sampled at packet rate. Static configuration is on
+-- telemetry.sessions.
+--
+-- timestamp is derived (sessions.session_start_utc + session_time), not
+-- wall-clock at insert, so re-delivered packets collapse onto the same row.
 
 CREATE TABLE IF NOT EXISTS telemetry.session_timeline (
     timestamp TIMESTAMPTZ NOT NULL,
@@ -8,10 +12,29 @@ CREATE TABLE IF NOT EXISTS telemetry.session_timeline (
     overall_frame_identifier INTEGER NOT NULL,
     session_time_left FLOAT NOT NULL,
     total_laps SMALLINT,
-    safety_car_status VARCHAR(50) NOT NULL,
+
+    -- Weather / track conditions
+    weather_state VARCHAR(50) NOT NULL,
     weather_track_temp SMALLINT NOT NULL,
     weather_air_temp SMALLINT NOT NULL,
-    weather_state VARCHAR(50) NOT NULL,
+
+    -- Race control
+    safety_car_status VARCHAR(50) NOT NULL,
+    marshal_zone_flags VARCHAR(20)[],
+    num_safety_car_periods SMALLINT,
+    num_virtual_safety_car_periods SMALLINT,
+    num_red_flag_periods SMALLINT,
+
+    -- Local session state
+    game_paused BOOLEAN,
+    is_spectating BOOLEAN,
+    spectator_car_index SMALLINT,
+
+    -- Player-only pit strategy window (0 / 255 when not applicable)
+    pit_stop_window_ideal_lap SMALLINT,
+    pit_stop_window_latest_lap SMALLINT,
+    pit_stop_rejoin_position SMALLINT,
+
     PRIMARY KEY (timestamp, session_uid)
 );
 

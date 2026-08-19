@@ -1,4 +1,4 @@
-"""Repository for car_frame hypertable."""
+"""Repository for the car_frame hypertable."""
 
 import logging
 from typing import Optional
@@ -6,89 +6,106 @@ from typing import Optional
 from database.client import PostgresClient
 from database.repositories.base import RepositoryBase
 
+# Column order for an inserted car_frame row. The service builds its tuples
+# against this list and looks up field positions by name (see COLUMN_INDEX), so
+# adding or reordering a column here is the only change needed — nothing
+# depends on a hand-counted offset.
+CAR_FRAME_COLUMNS: tuple[str, ...] = (
+    # Meta
+    "timestamp", "session_uid", "user_id", "session_time", "overall_frame_identifier",
+    # Motion / Packet 0
+    "world_pos_x", "world_pos_y", "world_pos_z",
+    "world_velocity_x", "world_velocity_y", "world_velocity_z",
+    "world_forward_dir_x", "world_forward_dir_y", "world_forward_dir_z",
+    "world_right_dir_x", "world_right_dir_y", "world_right_dir_z",
+    "g_force_lateral", "g_force_longitudinal", "g_force_vertical",
+    "yaw", "pitch", "roll",
+    # Car Telemetry / Packet 6 — scalars
+    "speed", "throttle", "steer", "brake", "clutch", "gear",
+    "engine_rpm", "drs", "rev_lights_percent", "rev_lights_bit_value",
+    "engine_temperature",
+    # Car Telemetry / Packet 6 — per wheel (RL, RR, FL, FR)
+    "brakes_temp_rl", "brakes_temp_rr", "brakes_temp_fl", "brakes_temp_fr",
+    "tyres_surface_temp_rl", "tyres_surface_temp_rr", "tyres_surface_temp_fl", "tyres_surface_temp_fr",
+    "tyres_inner_temp_rl", "tyres_inner_temp_rr", "tyres_inner_temp_fl", "tyres_inner_temp_fr",
+    "tyres_pressure_rl", "tyres_pressure_rr", "tyres_pressure_fl", "tyres_pressure_fr",
+    "surface_type_rl", "surface_type_rr", "surface_type_fl", "surface_type_fr",
+    # Packet 6 packet-level, player car only
+    "mfd_panel_index", "mfd_panel_index_secondary_player", "suggested_gear",
+    # Lap Data / Packet 2
+    "last_lap_time_ms", "current_lap_time_ms", "sector1_time_ms", "sector2_time_ms",
+    "lap_distance", "total_distance", "safety_car_delta",
+    "position", "grid_position", "current_lap_num",
+    "sector", "pit_status", "driver_status", "result_status", "current_lap_invalid",
+    "gap_to_leader_ms", "gap_to_car_ahead_ms", "gap_to_car_behind_ms",
+    "num_pit_stops", "pit_lane_timer_active", "pit_lane_time_ms",
+    "pit_stop_time_ms", "pit_stop_should_serve_pen",
+    "penalties_seconds", "total_warnings", "corner_cutting_warnings",
+    "num_unserved_drive_through_pens", "num_unserved_stop_go_pens",
+    "speed_trap_fastest_speed", "speed_trap_fastest_lap",
+    # Car Status / Packet 7 — never restricted
+    "pit_limiter", "drs_allowed", "drs_activation_distance",
+    "actual_tyre_compound", "visual_tyre_compound", "tyres_age_laps",
+    "vehicle_fia_flags", "network_paused",
+    "traction_control", "anti_lock_brakes", "max_rpm", "idle_rpm", "max_gears",
+    # Car Status / Packet 7 — restricted (NULL for a Restricted driver)
+    "front_brake_bias", "fuel_mix", "fuel_in_tank", "fuel_capacity",
+    "fuel_remaining_laps", "ers_store_energy", "ers_deploy_mode",
+    "ers_deployed_this_lap", "ers_harvest_limit_per_lap",
+    "ers_harvested_this_lap_mguk", "ers_harvested_this_lap_mguh",
+    "engine_power_ice", "engine_power_mguk",
+    # Car Telemetry 2 / Packet 16
+    "active_aero_mode", "active_aero_available", "active_aero_activation_distance",
+    "overtake_available", "overtake_active", "overtake_activation_distance",
+    "is_2026_regulations", "driving_wrong_way",
+)
+
+COLUMN_INDEX: dict[str, int] = {name: i for i, name in enumerate(CAR_FRAME_COLUMNS)}
+
+
+def _build_insert_sql(table: str, columns: tuple[str, ...], conflict: str) -> str:
+    placeholders = ", ".join(["%s"] * len(columns))
+    return (
+        f"INSERT INTO {table} ({', '.join(columns)})\n"
+        f"VALUES ({placeholders})\n"
+        f"ON CONFLICT ({conflict}) DO NOTHING"
+    )
+
 
 class CarFrameRepository(RepositoryBase):
-    """Manages car_frame hypertable — combined Motion + Telemetry + Lap Data + Car Status + Car Damage per frame."""
+    """Combined Motion + Lap Data + Car Telemetry + Car Status + Car Telemetry 2 per frame."""
 
     TABLE_NAME = "telemetry.car_frame"
+    COLUMNS = CAR_FRAME_COLUMNS
+
+    _SQL = _build_insert_sql(
+        "telemetry.car_frame",
+        CAR_FRAME_COLUMNS,
+        "timestamp, session_uid, user_id, overall_frame_identifier",
+    )
 
     def __init__(self, postgres_client: PostgresClient, logger: Optional[logging.Logger] = None):
         super().__init__(postgres_client, logger)
 
     def insert_batch(self, rows: list[tuple]):
         """
-        Batch INSERT combined frame rows (up to 22 per frame).
+        Batch INSERT combined frame rows — up to MAX_CARS per frame.
 
-        Each tuple: (session_uid, user_id, session_time, overall_frame_identifier,
-                      world_pos_x..roll (12 motion fields),
-                      speed..engine_temperature (9 telemetry scalars),
-                      brakes_temp_rl..fr (4), tyres_surface_temp_rl..fr (4), tyres_inner_temp_rl..fr (4),
-                      tyres_pressure_rl..fr (4), surface_type_rl..fr (4) (20 per-wheel telemetry fields),
-                      current_lap_num..position (4 lap scalars),
-                      sector..result_status (4 lap enums),
-                      gap/pit fields (10 new lap data fields),
-                      pit_limiter..network_paused (8 car status),
-                      front_brake_bias..ers_harvest_limit_per_lap (7 ERS/fuel/brake-bias),
-                      active_aero_mode..driving_wrong_way (8 Car Telemetry 2 / packet 16 fields))
+        Each tuple must match CAR_FRAME_COLUMNS exactly, in order.
         """
         if not rows:
             return
+        self._execute_many(self._SQL, rows, table_name=self.TABLE_NAME)
 
-        sql = """
-            INSERT INTO telemetry.car_frame (
-                timestamp, session_uid, user_id, session_time,
-                overall_frame_identifier,
-                -- Motion
-                world_pos_x, world_pos_y, world_pos_z,
-                world_velocity_x, world_velocity_y, world_velocity_z,
-                g_force_lateral, g_force_longitudinal, g_force_vertical,
-                yaw, pitch, roll,
-                -- Telemetry scalars
-                speed, throttle, steer, brake,
-                clutch, gear, engine_rpm, drs, engine_temperature,
-                -- Telemetry per-wheel temps
-                brakes_temp_rl, brakes_temp_rr, brakes_temp_fl, brakes_temp_fr,
-                tyres_surface_temp_rl, tyres_surface_temp_rr, tyres_surface_temp_fl, tyres_surface_temp_fr,
-                tyres_inner_temp_rl, tyres_inner_temp_rr, tyres_inner_temp_fl, tyres_inner_temp_fr,
-                tyres_pressure_rl, tyres_pressure_rr, tyres_pressure_fl, tyres_pressure_fr,
-                -- Telemetry per-wheel surface type
-                surface_type_rl, surface_type_rr, surface_type_fl, surface_type_fr,
-                -- Lap Data scalars
-                current_lap_num, lap_distance, current_lap_time_ms,
-                position,
-                -- Lap Data enums
-                sector, pit_status, driver_status, result_status,
-                -- Lap Data gaps and pit timing
-                gap_to_leader_ms, gap_to_car_ahead_ms, gap_to_car_behind_ms,
-                total_distance, safety_car_delta, num_pit_stops,
-                pit_lane_timer_active, pit_lane_time_ms, pit_stop_time_ms,
-                pit_stop_should_serve_pen,
-                -- Car Status
-                pit_limiter, drs_allowed, drs_activation_distance,
-                actual_tyre_compound, visual_tyre_compound, tyres_age_laps,
-                vehicle_fia_flags, network_paused,
-                -- Car Status: ERS/fuel/brake-bias (restricted-null per Part 2.2)
-                front_brake_bias, fuel_in_tank, fuel_remaining_laps,
-                ers_store_energy, ers_deploy_mode, ers_deployed_this_lap,
-                ers_harvest_limit_per_lap,
-                -- Car Telemetry 2 / Packet 16 (2026 Season Pack)
-                active_aero_mode, active_aero_available, active_aero_activation_distance,
-                overtake_available, overtake_active, overtake_activation_distance,
-                is_2026_regulations, driving_wrong_way
-            ) VALUES (
-                clock_timestamp(), %s, %s, %s, %s,
-                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                %s, %s, %s, %s,
-                %s, %s, %s, %s,
-                %s, %s, %s, %s,
-                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                %s, %s, %s, %s, %s, %s, %s, %s,
-                %s, %s, %s, %s, %s, %s, %s,
-                %s, %s, %s, %s, %s, %s, %s, %s
-            )
-            ON CONFLICT (timestamp, session_uid, user_id) DO NOTHING
+    def delete_after(self, session_uid: str, session_time: float) -> int:
         """
+        Discard rows recorded after a flashback's rewind point.
 
-        self._execute_many(sql, rows, table_name=self.TABLE_NAME)
+        A flashback undoes everything the driver did past flashback_session_time,
+        so those frames describe a run that no longer happened.
+        """
+        return self._execute(
+            "DELETE FROM telemetry.car_frame WHERE session_uid = %s AND session_time > %s",
+            (session_uid, session_time),
+            table_name=self.TABLE_NAME,
+        )

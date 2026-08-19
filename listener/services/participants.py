@@ -7,6 +7,8 @@ from database.repositories import EntriesRepository
 from utils.bounded_dict import BoundedDict
 
 GENERIC_DRIVER_NAMES = {"player", ""}
+
+# m_teamId sentinel for a lobby slot with no team selected (uint16 in F1 26).
 EMPTY_SLOT_TEAM_ID = 65535
 
 
@@ -14,9 +16,9 @@ class ParticipantsService:
     """
     Handles Participants packets (Packet 4).
 
-    Only writes real human drivers to the entries table.
-    Filters out AI drivers and empty lobby slots (team_id=255, race_number=0).
-    Re-evaluates on every packet so mid-session joins are captured.
+    Only writes real human drivers to the entries table; AI drivers and empty
+    lobby slots are skipped. Re-evaluates on every packet so drivers joining
+    mid-session are captured.
     """
 
     def __init__(
@@ -26,19 +28,22 @@ class ParticipantsService:
     ):
         self._entries_repo = entries_repo
         self._logger = logger or logging.getLogger(__name__)
-        # session_uid -> frozenset of human car_indices already written
-        self._written_humans: BoundedDict = BoundedDict(200)
-        self._user_map_cache: dict[str, dict[int, int]] = {}
+        # session_uid -> frozenset of human car_indices confirmed written
+        self._written_humans: BoundedDict[str, frozenset[int]] = BoundedDict(200)
+        self._user_map_cache: BoundedDict[str, dict[int, int]] = BoundedDict(200)
         self._player_counter: int | None = None
         # session_uid -> frozenset of car_indices with your_telemetry == 0
-        # (Restricted), excluding the local player's own car — updated on
-        # every Participants packet since a driver can change their
-        # telemetry setting mid-session.
-        self._restricted_indices: BoundedDict = BoundedDict(200)
+        # (Restricted), excluding the local player's own car. Rebuilt on every
+        # Participants packet, since a driver can change the setting mid-session.
+        self._restricted_indices: BoundedDict[str, frozenset[int]] = BoundedDict(200)
 
     def get_restricted_indices(self, session_uid: str) -> frozenset[int]:
-        """Return the set of car_indices currently restricted (your_telemetry == 0) for a session."""
-        return self._restricted_indices.get(session_uid, frozenset())
+        """Car indices currently Restricted (your_telemetry == 0) for a session."""
+        return self._restricted_indices.get(session_uid) or frozenset()
+
+    def get_user_map(self, session_uid: str) -> dict[int, int]:
+        """The confirmed car_index -> user_id mapping for a session."""
+        return self._user_map_cache.get(session_uid) or {}
 
     def _next_generic_name(self) -> str:
         """Generate the next sequential 'Player N' name, querying the DB on first call."""
@@ -51,23 +56,18 @@ class ParticipantsService:
         """
         Process a Participants packet.
 
-        Skips AI drivers entirely. Only inserts human players into entries.
-        Re-evaluates every packet so humans joining mid-session are captured.
-
         Returns:
-            car_index -> user_id mapping for human drivers in the session
+            car_index -> user_id mapping for the human drivers whose entries
+            rows are known to exist.
         """
         session_uid = str(packet.header.session_uid)
 
-        # Restricted set: drivers with your_telemetry == 0 (Restricted).
-        # The local player's own car is always fully visible regardless of
-        # their own telemetry setting. Updated every packet since this can
-        # change mid-session.
+        # The local player always sees their own car in full, whatever their own
+        # telemetry setting says, so exclude it from the restricted set.
         self._restricted_indices[session_uid] = frozenset(
             i for i, p in enumerate(packet.participants) if p.your_telemetry == 0
         ) - {packet.header.player_car_index}
 
-        # Build list of real human drivers (skip AI and empty lobby slots)
         human_entries = []
         for i, participant in enumerate(packet.participants):
             if participant.ai_controlled:
@@ -82,11 +82,10 @@ class ParticipantsService:
                 )
                 driver_name = weekend_name if weekend_name else self._next_generic_name()
 
-            num_colours = getattr(participant, 'num_colours', 4)
+            num_colours = min(participant.num_colours, 4)
             livery_colors = []
-            for color_idx in range(min(num_colours, 4)):
-                color_tuple = participant.livery_colours[color_idx]
-                livery_colors.extend(color_tuple)
+            for color_idx in range(num_colours):
+                livery_colors.extend(participant.livery_colours[color_idx])
 
             human_entries.append({
                 "session_uid": session_uid,
@@ -95,22 +94,27 @@ class ParticipantsService:
                 "team_id": participant.team_id,
                 "race_number": participant.race_number,
                 "nationality": participant.nationality,
-                "telemetry_setting": bool(participant.your_telemetry),
+                "driver_id": participant.driver_id,
+                "network_id": participant.network_id,
+                "my_team": bool(participant.my_team),
+                "platform": participant.platform,
+                "tech_level": participant.tech_level,
+                "show_online_names": bool(participant.show_online_names),
+                "telemetry_public": bool(participant.your_telemetry),
+                "num_livery_colors": num_colours,
                 "livery_colors": livery_colors,
             })
 
         current_humans = frozenset(e["car_index"] for e in human_entries)
-        written = self._written_humans.get(session_uid, frozenset())
+        written = self._written_humans.get(session_uid) or frozenset()
 
-        # Fast path: same set of humans already written
+        # Fast path: every human on track already has a confirmed entries row.
         if current_humans == written:
-            return self._user_map_cache.get(session_uid, {})
+            return self.get_user_map(session_uid)
 
-        # Find new humans that haven't been written yet
         new_entries = [e for e in human_entries if e["car_index"] not in written]
-
         if not new_entries:
-            return self._user_map_cache.get(session_uid, {})
+            return self.get_user_map(session_uid)
 
         self._logger.info(
             "Session %s: new human driver(s) detected: %s",
@@ -118,16 +122,18 @@ class ParticipantsService:
             [e["driver_name"] for e in new_entries],
         )
 
-        try:
-            new_mappings = self._entries_repo.insert_entries_batch(new_entries)
-            user_map = self._user_map_cache.get(session_uid, {})
-            user_map = {**user_map, **new_mappings}
-            self._user_map_cache[session_uid] = user_map
-            if len(self._user_map_cache) > 100:
-                oldest = next(iter(self._user_map_cache))
-                del self._user_map_cache[oldest]
-            self._written_humans[session_uid] = current_humans
-            return user_map
-        except Exception as e:
-            self._logger.error(f"Failed to insert entries: {e}", exc_info=True)
-            return self._user_map_cache.get(session_uid, {})
+        new_mappings = self._entries_repo.insert_entries_batch(new_entries)
+        if not new_mappings:
+            # The write failed. Leave _written_humans alone so the next
+            # Participants packet retries instead of running the whole session
+            # against a roster that was never recorded.
+            self._logger.warning(
+                "Session %s: entries write failed for %d driver(s) — will retry",
+                session_uid, len(new_entries),
+            )
+            return self.get_user_map(session_uid)
+
+        user_map = {**self.get_user_map(session_uid), **new_mappings}
+        self._user_map_cache[session_uid] = user_map
+        self._written_humans[session_uid] = written | frozenset(new_mappings)
+        return user_map

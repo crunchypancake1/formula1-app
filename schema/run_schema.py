@@ -33,11 +33,14 @@ SCHEMA_EXECUTION_ORDER = {
         "events_retirements.sql",
         "events_speed_traps.sql",
         "events_driver_actions.sql",
+        "events_flashbacks.sql",
+        "events_buttons.sql",
         "race_classification.sql",
         "qualifying_classification.sql",
         "weather_forecast.sql",
         "lap_positions.sql",
         "session_timeline.sql",
+        "session_bests.sql",
         "car_frame.sql",
         "car_frame_damage.sql",
         "car_frame_motion_ex.sql",
@@ -46,7 +49,6 @@ SCHEMA_EXECUTION_ORDER = {
         "lap_setups.sql",
         "tyre_sets.sql",
         "lobby_info.sql",
-        "auto_link_trigger.sql",
     ],
 }
 

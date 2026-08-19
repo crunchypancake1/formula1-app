@@ -34,7 +34,7 @@ class EventsPenaltiesRepository(RepositoryBase):
                 user_id, other_user_id, penalty_type, infringement_type,
                 time_seconds, lap_num, places_gained
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (session_uid, overall_frame_identifier, user_id) DO NOTHING
+            ON CONFLICT (session_uid, overall_frame_identifier, user_id, penalty_type) DO NOTHING
         """
         self._execute(
             sql,

@@ -21,6 +21,7 @@ from .packet_builder import (
     build_event_scar,
     build_event_ssta,
     build_final_classification_packet,
+    build_event_lgot,
     build_lap_data_packet,
     build_motion_packet,
     build_participants_packet,
@@ -210,6 +211,48 @@ class TestScarFormationLapSetsRaceStarted:
         )
         dispatcher.handle_packet(data)
         assert dispatcher._race_started[session_key] is True
+
+
+class TestRaceStartDetection:
+    """
+    A race records nothing until the dispatcher believes it has started, so
+    every way a race can legitimately begin has to flip that flag. Relying on
+    the formation-lap SCAR alone silently discards an entire race's telemetry
+    whenever formation laps are switched off.
+    """
+
+    def test_lights_out_starts_a_race_without_a_formation_lap(self):
+        dispatcher, *_ = _make_dispatcher()
+        _send_session(dispatcher, session_type=15)
+        _send_participants(dispatcher)
+        session_key = str(SESSION_UID)
+        assert dispatcher._race_started.get(session_key) is False
+
+        dispatcher.handle_packet(
+            build_event_lgot(session_uid=SESSION_UID, session_time=3.0, frame_id=4)
+        )
+        assert dispatcher._race_started[session_key] is True
+
+    def test_racing_lap_number_is_a_backstop_for_a_missed_start_event(self):
+        """Nobody is on lap 2 during a formation lap."""
+        dispatcher, _, _, car_frame_repo, *_ = _make_dispatcher()
+        _send_session(dispatcher, session_type=15)
+        _send_participants(dispatcher)
+        session_key = str(SESSION_UID)
+        assert dispatcher._race_started.get(session_key) is False
+
+        # No LGOT and no SCAR — just cars circulating on lap 2.
+        for frame_id, lap_distance in ((10, 100.0), (11, 200.0)):
+            dispatcher.handle_packet(build_lap_data_packet(
+                session_uid=SESSION_UID, session_time=30.0 + frame_id, frame_id=frame_id,
+                num_drivers=2, current_lap_num=2, lap_distance=lap_distance,
+                track_length=5793, positions=[1, 2],
+            ))
+
+        assert dispatcher._race_started[session_key] is True
+        assert car_frame_repo.call_count("insert_batch") > 0, (
+            "Race telemetry was dropped even though cars were on a racing lap"
+        )
 
 
 class TestSessionLevelEventsBypassUserMap:

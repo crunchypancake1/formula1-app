@@ -1,6 +1,6 @@
--- Race classification table
--- Stores final race results including tire stints and penalties
--- Points are calculated dynamically from position using league settings
+-- Race classification (source: Final Classification packet, Packet 8)
+-- League points are calculated dynamically from position; game_points is what
+-- the game itself awarded, kept for reference.
 CREATE TABLE IF NOT EXISTS telemetry.race_classification (
     session_uid VARCHAR(255) NOT NULL REFERENCES telemetry.sessions(session_uid) ON DELETE CASCADE,
     user_id INTEGER NOT NULL REFERENCES identity.users(id),
@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS telemetry.race_classification (
     result_status VARCHAR(50) NOT NULL,
     result_reason VARCHAR(50),
     best_lap_time_ms BIGINT,
+    game_points SMALLINT,
     total_race_time FLOAT NOT NULL,
     penalties_time SMALLINT NOT NULL,
     num_penalties SMALLINT NOT NULL,

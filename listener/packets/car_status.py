@@ -16,6 +16,7 @@ _CAR_STATUS_FORMAT_SIZE = struct.calcsize(_CAR_STATUS_FORMAT)
 
 @dataclass
 class CarStatusData:
+    # --- Always available for every car ---
     pit_limiter: int                   # uint8  | 0=off, 1=on
     drs_allowed: int                   # uint8  | 0=not allowed, 1=allowed
     drs_activation_distance: int       # uint16 | 0=DRS not available, else metres
@@ -24,13 +25,26 @@ class CarStatusData:
     tyres_age_laps: int                # uint8  | laps on current set
     vehicle_fia_flags: int             # int8   | -1=invalid, 0=none, 1=green, 2=blue, 3=yellow
     network_paused: int                # uint8  | paused in network game
+    traction_control: int              # uint8  | 0=off, 1=medium, 2=full
+    anti_lock_brakes: int              # uint8  | 0=off, 1=on
+    max_rpm: int                       # uint16 | rev limiter
+    idle_rpm: int                      # uint16
+    max_gears: int                     # uint8
+
+    # --- Zeroed by the game for any other driver set to Restricted ---
     front_brake_bias: int              # uint8  | percentage
+    fuel_mix: int                      # uint8  | 0=lean, 1=standard, 2=rich, 3=max
     fuel_in_tank: float                # float  | kilograms
+    fuel_capacity: float               # float  | kilograms
     fuel_remaining_laps: float         # float  | estimated laps remaining
     ers_store_energy: float            # float  | joules stored in ERS
     ers_deploy_mode: int               # uint8  | 0=none, 1=medium, 2=hotlap, 3=boost
-    ers_harvest_limit_per_lap: float   # float  | joules ERS can harvest this lap
     ers_deployed_this_lap: float       # float  | joules deployed this lap
+    ers_harvest_limit_per_lap: float   # float  | joules ERS can harvest this lap
+    ers_harvested_this_lap_mguk: float # float  | joules harvested by the MGU-K
+    ers_harvested_this_lap_mguh: float # float  | joules harvested by the MGU-H
+    engine_power_ice: float            # float  | watts
+    engine_power_mguk: float           # float  | watts
 
 
 @dataclass
@@ -62,13 +76,24 @@ def unpack_car_status(packet_header: PacketHeader, data: bytes) -> CarStatusPack
             tyres_age_laps=f[15],
             vehicle_fia_flags=f[16],
             network_paused=f[25],
+            traction_control=f[0],
+            anti_lock_brakes=f[1],
+            max_rpm=f[8],
+            idle_rpm=f[9],
+            max_gears=f[10],
             front_brake_bias=f[3],
+            fuel_mix=f[2],
             fuel_in_tank=f[5],
+            fuel_capacity=f[6],
             fuel_remaining_laps=f[7],
             ers_store_energy=f[19],
             ers_deploy_mode=f[20],
-            ers_harvest_limit_per_lap=f[23],
             ers_deployed_this_lap=f[24],
+            ers_harvest_limit_per_lap=f[23],
+            ers_harvested_this_lap_mguk=f[21],
+            ers_harvested_this_lap_mguh=f[22],
+            engine_power_ice=f[17],
+            engine_power_mguk=f[18],
         ))
 
     return CarStatusPacket(packet_header, car_list)

@@ -10,7 +10,7 @@ PARTICIPANT_DATA_SIZE = struct.calcsize(_PARTICIPANT_FORMAT)
 @dataclass
 class Participant:
     ai_controlled: int                      # uint8     |   Whether the vehicle is AI (1) or Human (0) controlled
-    driver_id: int                          # uint16    |   Driver id - see appendix, 255 if network human
+    driver_id: int                          # uint16    |   Driver id - see appendix, 65535 if network human
     network_id: int                         # uint16    |   Network id – unique identifier for network players
     team_id: int                            # uint16    |   Team id - see appendix
     my_team: int                            # uint8     |   My team flag – 1 = My Team, 0 = otherwise
@@ -36,8 +36,8 @@ def unpack_participants(packet_header: PacketHeader, data: bytes) -> Participant
     """
     Unpack Participants packet (Packet ID: 4).
 
-    Contains driver roster for the session - names, teams, nationalities,
-    AI status, etc. for all MAX_CARS cars. Sent every ~5 seconds.
+    Driver roster for the session — names, teams, nationalities, AI status and
+    each driver's telemetry privacy setting, for all MAX_CARS car slots.
 
     Args:
         packet_header: Unpacked packet header

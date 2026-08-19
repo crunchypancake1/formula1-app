@@ -1,12 +1,16 @@
 -- Car setup library (deduplicated by hash + track + driver)
--- Source: Car Setup packet (Packet 5), all drivers
+-- Source: Car Setup packet (Packet 5)
+--
+-- Online you only ever receive your own setup — other players' entries arrive
+-- as all zeroes regardless of their telemetry setting, and spectators get
+-- none. The listener detects the all-zero case and does not persist it, so
+-- every row here is a real setup.
 CREATE TABLE IF NOT EXISTS telemetry.car_setups (
     setup_id        SERIAL PRIMARY KEY,
     setup_hash      BYTEA NOT NULL,
     track_id        SMALLINT NOT NULL,
-    user_id       INTEGER,
+    user_id         INTEGER,
     session_uid     VARCHAR(255),
-    telemetry_available BOOLEAN NOT NULL DEFAULT true,
     first_seen_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
     -- Aerodynamics

@@ -1,4 +1,4 @@
-"""Repository for per-lap tyre set snapshots."""
+"""Repository for per-lap tyre set snapshots (Packet 12)."""
 
 import logging
 from typing import Optional
@@ -9,6 +9,7 @@ from database.repositories.base import RepositoryBase
 
 class TyreSetsInventoryRepository(RepositoryBase):
     """Named TyreSetsInventoryRepository to avoid collision with TyreStintsRepository."""
+
     TABLE_NAME = "telemetry.tyre_sets"
 
     def __init__(self, postgres_client: PostgresClient, logger: Optional[logging.Logger] = None):
@@ -16,17 +17,19 @@ class TyreSetsInventoryRepository(RepositoryBase):
 
     def insert_snapshot(self, rows: list[tuple]):
         """
-        Insert a snapshot of available tyre sets for a driver on a lap.
+        Insert a snapshot of the tyre sets available to a driver on a lap.
 
-        Each tuple: (session_uid, user_id, lap_number, actual_compound,
-                     visual_compound, wear, life_span, usable_life,
-                     lap_delta_time_ms, fitted)
+        Each tuple: (session_uid, user_id, lap_number, set_index,
+                     actual_compound, visual_compound, wear, life_span,
+                     usable_life, recommended_session, lap_delta_time_ms, fitted)
         """
         sql = """
             INSERT INTO telemetry.tyre_sets (
-                session_uid, user_id, lap_number,
+                session_uid, user_id, lap_number, set_index,
                 actual_compound, visual_compound, wear,
-                life_span, usable_life, lap_delta_time_ms, fitted
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                life_span, usable_life, recommended_session,
+                lap_delta_time_ms, fitted
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (session_uid, user_id, lap_number, set_index) DO NOTHING
         """
         self._execute_many(sql, rows, table_name=self.TABLE_NAME)

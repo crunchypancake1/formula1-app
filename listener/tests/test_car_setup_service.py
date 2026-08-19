@@ -1,51 +1,32 @@
 import os, sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from types import SimpleNamespace
+from packets.car_setup import CarSetupData, CarSetupPacket
+
+from . import factories
 
 from services.car_setup import CarSetupService
 
 from .mock_repo import MockRepo
 
 
-def _make_setup():
-    return SimpleNamespace(
-        front_wing=10, rear_wing=8,
-        on_throttle=80, off_throttle=60,
-        front_camber=-3.0, rear_camber=-1.5,
-        front_toe=0.1, rear_toe=0.05,
-        front_suspension=7, rear_suspension=9,
-        front_anti_roll_bar=5, rear_anti_roll_bar=6,
-        front_ride_height=3, rear_ride_height=7,
-        brake_pressure=90, brake_bias=58, engine_braking=50,
-        front_left_tyre_pressure=23.5, front_right_tyre_pressure=23.5,
-        rear_left_tyre_pressure=22.0, rear_right_tyre_pressure=22.0,
-        ballast=0, fuel_load=50.0,
-    )
+def _make_setup(**overrides):
+    return factories.make_car_setup(**overrides)
 
 
 def _make_blank_setup():
-    """An all-zeros setup, as sent for spectators / non-local cars in MP
-    when telemetry is unavailable."""
-    return SimpleNamespace(
-        front_wing=0, rear_wing=0,
-        on_throttle=0, off_throttle=0,
-        front_camber=0.0, rear_camber=0.0,
-        front_toe=0.0, rear_toe=0.0,
-        front_suspension=0, rear_suspension=0,
-        front_anti_roll_bar=0, rear_anti_roll_bar=0,
-        front_ride_height=0, rear_ride_height=0,
-        brake_pressure=0, brake_bias=0, engine_braking=0,
-        front_left_tyre_pressure=0.0, front_right_tyre_pressure=0.0,
-        rear_left_tyre_pressure=0.0, rear_right_tyre_pressure=0.0,
-        ballast=0, fuel_load=0.0,
-    )
+    """The all-zero setup the game sends for another player's car online."""
+    return factories.build(CarSetupData)
 
 
-def _make_setup_packet(setups=None):
+def _make_setup_packet(setups=None, next_front_wing_value=4.0, player_car_index=0):
     if setups is None:
-        setups = [_make_setup()] * 22
-    return SimpleNamespace(car_setups=setups)
+        setups = [_make_setup()]
+    return CarSetupPacket(
+        header=factories.make_header(packet_id=5, player_car_index=player_car_index),
+        car_setups=setups,
+        next_front_wing_value=next_front_wing_value,
+    )
 
 
 def _make_service(upsert_return=1):
@@ -90,16 +71,15 @@ def test_setup_hash_deduplication():
 
 def test_all_zeros_setup_writes_nothing():
     """
-    An all-zeros / telemetry-unavailable setup packet (spectators, non-local
-    cars in multiplayer) must result in no row being written at all — no
-    insert, and no cached all-zero row persisted on lap completion.
+    An all-zeros setup packet — what the game sends for another player's car
+    online, and for every car to a spectator — is not a setup. It must never
+    reach the database: a row of zeroes would read as a real (and absurd)
+    setup rather than as data that was withheld.
     """
     svc, car_setups_repo, lap_setups_repo = _make_service()
     packet = _make_setup_packet(setups=[_make_blank_setup()])
     svc.handle_car_setup_packet(packet, session_uid="123", user_map={0: 100})
-    # Cached, but flagged as telemetry_available=False
-    cached = svc._cached_setup[("123", 100)]
-    assert cached[2] is False
+    assert ("123", 100) not in svc._cached_setup
     svc.on_lap_complete(session_uid="123", user_id=100, lap_number=1, track_id=11)
     assert car_setups_repo.call_count("upsert_setup") == 0
     assert lap_setups_repo.call_count("insert_lap_setup") == 0

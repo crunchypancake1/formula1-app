@@ -92,7 +92,13 @@ class FinalClassificationService:
                 "position": fc.position,
                 "num_laps": fc.num_of_laps,
                 "result_status": fc.result_status,
+                "result_reason": fc.result_reason,
                 "best_lap_time_ms": fc.best_lap_time_in_ms if fc.best_lap_time_in_ms > 0 else None,
+                # What the game itself awarded. League points are derived from
+                # position separately; this is kept as the raw record.
+                "game_points": fc.points,
+                "penalties_time": fc.penalties_time if fc.penalties_time != 255 else 0,
+                "num_penalties": fc.num_of_penalties,
             }
 
             if is_race:
@@ -104,10 +110,7 @@ class FinalClassificationService:
                 classification.update({
                     "grid_position": fc.grid_position,
                     "num_pit_stops": fc.num_pit_stops,
-                    "result_reason": fc.result_reason,
                     "total_race_time": fc.total_race_time,
-                    "penalties_time": fc.penalties_time if fc.penalties_time != 255 else 0,
-                    "num_penalties": fc.num_of_penalties,
                     "num_tyre_stints": num_stints,
                     "tyre_stints_actual": fc.tyre_stints_actual[:num_stints],
                     "tyre_stints_visual": fc.tyre_stints_visual[:num_stints],

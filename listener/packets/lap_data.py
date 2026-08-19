@@ -43,10 +43,10 @@ class LapData:
     speed_trap_fastest_speed: float             # float     |   Fastest speed through speed trap for this car in kmph
     speed_trap_fastest_lap: int                 # uint8     |   Lap no the fastest speed was achieved, 255 = not set
 
-@dataclass # 1285 bytes
+@dataclass
 class LapDataPacket:
     header: PacketHeader                        #           |   Header
-    lap_data: list[LapData]                     # [22]      |   Lap data for all cars on track. Length 22
+    lap_data: list[LapData]                     # [MAX_CARS]|   Lap data for every car slot
     time_trial_pb_car_idx: int                  # uint8     |   Index of Personal Best car in time trial (255 if invalid)
     time_trial_rival_car_idx: int               # uint8     |   Index of Rival car in time trial (255 if invalid)
 
@@ -57,8 +57,8 @@ def unpack_lap_data(packet_header: PacketHeader, data: bytes) -> LapDataPacket:
     """
     Unpack Lap Data packet (Packet ID: 2).
 
-    Contains lap timing data for all 22 cars, including lap times, sectors,
-    positions, pit status, and penalties. Sent at ~2Hz during session.
+    Contains lap timing data for all MAX_CARS car slots, including lap times,
+    sectors, positions, pit status, and penalties.
 
     Args:
         packet_header: Unpacked packet header

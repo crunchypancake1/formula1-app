@@ -20,7 +20,6 @@ class CarSetupsRepository(RepositoryBase):
         fields: tuple,
         user_id: int,
         session_uid: str,
-        telemetry_available: bool,
     ) -> Optional[int]:
         """
         Insert a setup if the hash+track+user combo is new, otherwise return existing setup_id.
@@ -31,7 +30,6 @@ class CarSetupsRepository(RepositoryBase):
             fields: Tuple of 23 setup values matching DB column order
             user_id: User ID this setup belongs to
             session_uid: Session UID where this setup was observed
-            telemetry_available: True if setup has non-zero fields (real telemetry)
 
         Returns:
             setup_id or None if DB write failed
@@ -40,7 +38,7 @@ class CarSetupsRepository(RepositoryBase):
             return None
         sql = """
             INSERT INTO telemetry.car_setups (
-                setup_hash, track_id, user_id, session_uid, telemetry_available,
+                setup_hash, track_id, user_id, session_uid,
                 front_wing, rear_wing, on_throttle, off_throttle,
                 front_camber, rear_camber, front_toe, rear_toe,
                 front_suspension, rear_suspension, front_anti_roll_bar, rear_anti_roll_bar,
@@ -49,7 +47,7 @@ class CarSetupsRepository(RepositoryBase):
                 front_left_tyre_pressure, front_right_tyre_pressure,
                 rear_left_tyre_pressure, rear_right_tyre_pressure,
                 ballast, fuel_load
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (setup_hash, track_id, user_id) DO NOTHING
             RETURNING setup_id
         """
@@ -58,7 +56,7 @@ class CarSetupsRepository(RepositoryBase):
                 if conn is None:
                     return None
                 with conn.cursor() as cur:
-                    cur.execute(sql, (setup_hash, track_id, user_id, session_uid, telemetry_available) + fields)
+                    cur.execute(sql, (setup_hash, track_id, user_id, session_uid) + fields)
                     row = cur.fetchone()
                     if row is None:
                         cur.execute(

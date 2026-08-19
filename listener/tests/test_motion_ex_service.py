@@ -3,7 +3,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from types import SimpleNamespace
 
+from database.repositories.car_frame_motion_ex import CAR_FRAME_MOTION_EX_COLUMNS
 from services.motion_ex import MotionExService
+
+from . import factories
 
 from .mock_repo import MockRepo
 
@@ -42,14 +45,10 @@ def _make_motion_ex_data():
 
 
 def _make_motion_ex_packet(session_uid=123, player_car_index=0):
-    header = SimpleNamespace(
-        session_uid=session_uid,
-        session_time=10.0,
-        overall_frame_identifier=1,
-        player_car_index=player_car_index,
-    )
     return SimpleNamespace(
-        header=header,
+        header=factories.make_header(
+            packet_id=13, session_uid=session_uid, player_car_index=player_car_index
+        ),
         motion_ex_data=_make_motion_ex_data(),
     )
 
@@ -80,9 +79,6 @@ def test_row_tuple_length():
     svc.write_motion_ex(packet, user_map={0: 100})
     args, _ = repo.last_call("insert")
     row = args[0]
-    # 4 meta (session_uid, user_id, session_time, frame_id)
-    # + 44 per-wheel fields (11 tuple fields * 4 each)
-    # + 17 scalar fields
-    # = 4 + 44 + 17 = 65
-    expected_length = 4 + (11 * 4) + 17
-    assert len(row) == expected_length
+    # The row must line up with the repository's column list exactly, or the
+    # INSERT silently binds values to the wrong columns.
+    assert len(row) == len(CAR_FRAME_MOTION_EX_COLUMNS)

@@ -12,11 +12,15 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from database.client import PostgresClient
 from database.repositories import (
     CarFrameDamageRepository,
+    CarFrameMotionExRepository,
     CarFrameRepository,
+    CarSetupsRepository,
     EntriesRepository,
+    EventsButtonsRepository,
     EventsCollisionsRepository,
     EventsDriverActionsRepository,
     EventsFastestLapsRepository,
+    EventsFlashbacksRepository,
     EventsOvertakesRepository,
     EventsPenaltiesRepository,
     EventsRaceControlRepository,
@@ -24,20 +28,28 @@ from database.repositories import (
     EventsSpeedTrapsRepository,
     FinalClassificationRepository,
     LapPositionsRepository,
+    LapSetupsRepository,
     LapsRepository,
+    LobbyInfoRepository,
+    SessionBestsRepository,
     SessionsRepository,
     SessionTimelineRepository,
+    TyreSetsInventoryRepository,
     TyreStintsRepository,
 )
 from dispatcher import PacketDispatcher
 from services import (
     CarFrameService,
+    CarSetupService,
     EventsService,
     FinalClassificationService,
     LapHistoryService,
     LapPositionsService,
+    LobbyInfoService,
+    MotionExService,
     ParticipantsService,
     SessionService,
+    TyreSetsService,
 )
 
 from .qualifying_scenario import QUALIFYING_SESSION_UID
@@ -96,12 +108,22 @@ def dispatcher(db_client, logger):
     final_classification_repo = FinalClassificationRepository(db_client, logger)
     session_timeline_repo = SessionTimelineRepository(db_client, logger)
     lap_positions_repo = LapPositionsRepository(db_client, logger)
+    events_flashbacks_repo = EventsFlashbacksRepository(db_client, logger)
+    events_buttons_repo = EventsButtonsRepository(db_client, logger)
+    session_bests_repo = SessionBestsRepository(db_client, logger)
+    car_setups_repo = CarSetupsRepository(db_client, logger)
+    lap_setups_repo = LapSetupsRepository(db_client, logger)
+    tyre_sets_inventory_repo = TyreSetsInventoryRepository(db_client, logger)
+    car_frame_motion_ex_repo = CarFrameMotionExRepository(db_client, logger)
+    lobby_info_repo = LobbyInfoRepository(db_client, logger)
 
     session_service = SessionService(sessions_repo, session_timeline_repo, logger)
     participants_service = ParticipantsService(entries_repo, logger)
     car_frame_service = CarFrameService(car_frame_repo, car_frame_damage_repo=car_frame_damage_repo, logger=logger)
     tyre_stints_repo = TyreStintsRepository(db_client, logger)
-    lap_history_service = LapHistoryService(laps_repo, tyre_stints_repo, logger)
+    lap_history_service = LapHistoryService(
+        laps_repo, tyre_stints_repo, session_bests_repo, logger
+    )
     events_service = EventsService(
         race_control_repo=events_race_control_repo,
         overtakes_repo=events_overtakes_repo,
@@ -111,6 +133,8 @@ def dispatcher(db_client, logger):
         retirements_repo=events_retirements_repo,
         speed_traps_repo=events_speed_traps_repo,
         driver_actions_repo=events_driver_actions_repo,
+        flashbacks_repo=events_flashbacks_repo,
+        buttons_repo=events_buttons_repo,
         logger=logger,
     )
     final_classification_service = FinalClassificationService(
@@ -120,7 +144,13 @@ def dispatcher(db_client, logger):
         dead_letter_dir=None,
     )
     lap_positions_service = LapPositionsService(lap_positions_repo, logger)
+    car_setup_service = CarSetupService(car_setups_repo, lap_setups_repo, logger)
+    tyre_sets_service = TyreSetsService(tyre_sets_inventory_repo, logger)
+    motion_ex_service = MotionExService(car_frame_motion_ex_repo, logger)
+    lobby_info_service = LobbyInfoService(lobby_info_repo, logger)
 
+    # Wire every service, so packets 5, 9, 12, 13 and 16 are exercised through
+    # the real dispatcher rather than silently no-oping.
     return PacketDispatcher(
         session_service=session_service,
         participants_service=participants_service,
@@ -129,6 +159,10 @@ def dispatcher(db_client, logger):
         events_service=events_service,
         final_classification_service=final_classification_service,
         lap_positions_service=lap_positions_service,
+        car_setup_service=car_setup_service,
+        tyre_sets_service=tyre_sets_service,
+        motion_ex_service=motion_ex_service,
+        lobby_info_service=lobby_info_service,
         logger=logger,
     )
 
@@ -141,6 +175,14 @@ def cleanup_test_data(db_client, logger):
     logger.info("Cleaning up test data for session_uids=%s", _TEST_SESSION_UIDS)
 
     tables_to_clean = [
+        "telemetry.lap_setups",
+        "telemetry.car_setups",
+        "telemetry.tyre_sets",
+        "telemetry.session_bests",
+        "telemetry.events_flashbacks",
+        "telemetry.events_buttons",
+        "telemetry.car_frame_motion_ex",
+        "telemetry.lobby_info",
         "telemetry.race_classification",
         "telemetry.qualifying_classification",
         "telemetry.lap_positions",

@@ -1,6 +1,6 @@
 import socket
 
-# F1 25 max packet size is ~1460 bytes; 4096 provides comfortable headroom
+# Largest F1 26 packet is 1470 bytes; 4096 leaves comfortable headroom
 _DEFAULT_BUFFER_SIZE = 4096
 
 

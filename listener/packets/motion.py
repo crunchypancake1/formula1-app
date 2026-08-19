@@ -39,7 +39,12 @@ class MotionPacket:
 
 
 def unpack_motion(packet_header: PacketHeader, data: bytes) -> MotionPacket:
-    """Unpack Motion packet (Packet ID: 0). MAX_CARS cars of physics data."""
+    """
+    Unpack Motion packet (Packet ID: 0). MAX_CARS cars of physics data.
+
+    Covers every car, but the game only sends it while the player is in
+    control — it stops during replays and cutscenes.
+    """
     car_data_bytes = data[:(_CAR_MOTION_FORMAT_SIZE * MAX_CARS)]
 
     car_motion_list = []

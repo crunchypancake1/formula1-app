@@ -5,6 +5,7 @@ from packets.constants import MAX_CARS
 from .packet_builder import (
     build_car_damage_packet,
     build_car_status_packet,
+    build_car_telemetry2_packet,
     build_car_telemetry_packet,
     build_event_chqf,
     build_event_coll,
@@ -32,6 +33,11 @@ TOTAL_LAPS = 3
 TRACK_LENGTH = 5793
 NUM_DRIVERS = 24
 FRAME_INTERVAL = 0.016  # ~60Hz
+
+# Cars whose driver has Your Telemetry set to Restricted. The game zeroes their
+# fuel/ERS/damage in our stream, so these indices drive the withheld-data paths
+# end to end: NULL car-status extras and no car_frame_damage row at all.
+RESTRICTED_CAR_INDICES = {3, 7}
 
 
 class _FrameCounter:
@@ -110,6 +116,13 @@ def _build_frame_packets(
         num_drivers=NUM_DRIVERS,
     ))
 
+    packets.append(build_car_telemetry2_packet(
+        session_uid=SESSION_UID,
+        session_time=session_time,
+        frame_id=frame_id,
+        num_drivers=NUM_DRIVERS,
+    ))
+
     # Car Damage at ~10Hz (every 6th frame of the 60Hz main loop)
     if frame_id % 6 == 0:
         tyre_wear = 5.0 + (current_lap - 1) * 2.0
@@ -153,6 +166,7 @@ def generate_race_scenario() -> list[bytes]:
         session_time=session_time,
         frame_id=frame_id,
         num_drivers=NUM_DRIVERS,
+        restricted_indices=RESTRICTED_CAR_INDICES,
     ))
 
     packets.append(build_lap_data_packet(

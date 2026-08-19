@@ -1,10 +1,16 @@
--- Motion Ex data (Packet 13) — 60Hz, player car ONLY
--- References car_frame by (session_uid, user_id, overall_frame_identifier)
+-- Motion Ex (Packet 13) — 60Hz, player car ONLY. Joins telemetry.car_frame on
+-- (session_uid, user_id, overall_frame_identifier).
+--
+-- The packet has no car index: it always describes header.player_car_index and
+-- no other car, in every session type. Written unbuffered on arrival.
+--
+-- timestamp is derived (sessions.session_start_utc + session_time), which is
+-- what lets the primary key de-duplicate a re-delivered frame.
 
 CREATE TABLE IF NOT EXISTS telemetry.car_frame_motion_ex (
     timestamp               TIMESTAMPTZ NOT NULL,
     session_uid             VARCHAR(255) NOT NULL,
-    user_id               INTEGER NOT NULL,
+    user_id                 INTEGER NOT NULL,
     session_time            FLOAT NOT NULL,
     overall_frame_identifier INTEGER NOT NULL,
 
@@ -81,7 +87,7 @@ CREATE TABLE IF NOT EXISTS telemetry.car_frame_motion_ex (
     chassis_yaw             REAL,
     chassis_pitch           REAL,
 
-    PRIMARY KEY (timestamp, session_uid, user_id)
+    PRIMARY KEY (timestamp, session_uid, user_id, overall_frame_identifier)
 );
 
 SELECT create_hypertable(

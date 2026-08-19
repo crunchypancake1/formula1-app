@@ -144,3 +144,26 @@ def build_event_rcwn(
     """Race Winner event."""
     event_body = struct.pack('<B', vehicle_index)
     return _build_event_packet(session_uid, session_time, frame_id, "RCWN", event_body)
+
+
+def build_event_flbk(
+    session_uid: int,
+    session_time: float,
+    frame_id: int,
+    flashback_frame_identifier: int,
+    flashback_session_time: float,
+) -> bytes:
+    """Flashback event — the driver rewound to an earlier point in the session."""
+    event_body = struct.pack('<If', flashback_frame_identifier, flashback_session_time)
+    return _build_event_packet(session_uid, session_time, frame_id, "FLBK", event_body)
+
+
+def build_event_butn(
+    session_uid: int,
+    session_time: float,
+    frame_id: int,
+    button_status: int,
+) -> bytes:
+    """Button status event — local player's controller state changed."""
+    event_body = struct.pack('<I', button_status)
+    return _build_event_packet(session_uid, session_time, frame_id, "BUTN", event_body)

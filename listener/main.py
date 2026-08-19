@@ -20,9 +20,11 @@ from database.repositories import (
     CarFrameRepository,
     CarSetupsRepository,
     EntriesRepository,
+    EventsButtonsRepository,
     EventsCollisionsRepository,
     EventsDriverActionsRepository,
     EventsFastestLapsRepository,
+    EventsFlashbacksRepository,
     EventsOvertakesRepository,
     EventsPenaltiesRepository,
     EventsRaceControlRepository,
@@ -33,6 +35,7 @@ from database.repositories import (
     LapSetupsRepository,
     LapsRepository,
     LobbyInfoRepository,
+    SessionBestsRepository,
     SessionsRepository,
     SessionTimelineRepository,
     TyreSetsInventoryRepository,
@@ -83,8 +86,11 @@ def main():
     events_retirements_repo = EventsRetirementsRepository(postgres_client, logger)
     events_speed_traps_repo = EventsSpeedTrapsRepository(postgres_client, logger)
     events_driver_actions_repo = EventsDriverActionsRepository(postgres_client, logger)
+    events_flashbacks_repo = EventsFlashbacksRepository(postgres_client, logger)
+    events_buttons_repo = EventsButtonsRepository(postgres_client, logger)
     final_classification_repo = FinalClassificationRepository(postgres_client, logger)
     session_timeline_repo = SessionTimelineRepository(postgres_client, logger)
+    session_bests_repo = SessionBestsRepository(postgres_client, logger)
     lap_positions_repo = LapPositionsRepository(postgres_client, logger)
     tyre_stints_repo = TyreStintsRepository(postgres_client, logger)
     car_setups_repo = CarSetupsRepository(postgres_client, logger)
@@ -102,7 +108,9 @@ def main():
         car_frame_damage_repo=car_frame_damage_repo,
         logger=logger,
     )
-    lap_history_service = LapHistoryService(laps_repo, tyre_stints_repo, logger)
+    lap_history_service = LapHistoryService(
+        laps_repo, tyre_stints_repo, session_bests_repo, logger
+    )
     events_service = EventsService(
         race_control_repo=events_race_control_repo,
         overtakes_repo=events_overtakes_repo,
@@ -112,6 +120,8 @@ def main():
         retirements_repo=events_retirements_repo,
         speed_traps_repo=events_speed_traps_repo,
         driver_actions_repo=events_driver_actions_repo,
+        flashbacks_repo=events_flashbacks_repo,
+        buttons_repo=events_buttons_repo,
         logger=logger,
     )
     final_classification_service = FinalClassificationService(

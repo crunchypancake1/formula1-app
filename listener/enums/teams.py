@@ -3,7 +3,6 @@ from enum import Enum
 
 class Teams(Enum):
     UNKNOWN = 65535
-    LEGACY_UNKNOWN = 255
     MERCEDES = 0
     FERRARI = 1
     RED_BULL_RACING = 2

@@ -35,7 +35,12 @@ class TyreSetsPacket:
 
 
 def unpack_tyre_sets(packet_header: PacketHeader, data: bytes) -> TyreSetsPacket:
-    """Unpack Tyre Sets packet (Packet ID: 12). 20 tyre set slots for one car."""
+    """
+    Unpack Tyre Sets packet (Packet ID: 12). 20 tyre set slots for one car.
+
+    The packet cycles one car per send — key it by car_idx. It arrives entirely
+    zeroed for a driver whose Your Telemetry setting is Restricted.
+    """
     car_idx = struct.unpack('<B', data[:1])[0]
     set_data_bytes = data[1:1 + (_TYRE_SET_FORMAT_SIZE * 20)]
     remaining = data[1 + (_TYRE_SET_FORMAT_SIZE * 20):]

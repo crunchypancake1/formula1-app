@@ -8,11 +8,11 @@ CREATE TABLE IF NOT EXISTS telemetry.events_penalties (
     other_user_id             INTEGER REFERENCES identity.users(id),
     penalty_type                VARCHAR(50) NOT NULL,
     infringement_type           VARCHAR(50) NOT NULL,
-    time_seconds                SMALLINT,
+    time_seconds                SMALLINT,   -- NULL when the game sends the 255 sentinel
     lap_num                     SMALLINT,
     places_gained               SMALLINT,
     created_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (session_uid, overall_frame_identifier, user_id)
+    PRIMARY KEY (session_uid, overall_frame_identifier, user_id, penalty_type)
 );
 
 CREATE INDEX IF NOT EXISTS idx_events_penalties_session ON telemetry.events_penalties(session_uid);

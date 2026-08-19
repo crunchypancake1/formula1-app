@@ -1,15 +1,15 @@
-"""Repository for entries table."""
+"""Repository for the entries table (driver roster per session)."""
 
 import logging
 from typing import Optional
 
 from database.client import PostgresClient
 from database.repositories.base import RepositoryBase, safe_enum_name
-from enums import Nationalities
+from enums import Nationalities, Platform, Teams
 
 
 class EntriesRepository(RepositoryBase):
-    """Manages entries table - driver roster (22 entries per session)."""
+    """Manages telemetry.entries — one row per human driver per session."""
 
     TABLE_NAME = "telemetry.entries"
 
@@ -65,6 +65,33 @@ class EntriesRepository(RepositoryBase):
             self._logger.error(f"Failed to query max player number: {e}", exc_info=True)
             return 0
 
+    def ensure_teams(self, team_ids: set[int]) -> None:
+        """
+        Make sure every team_id exists in telemetry.teams before entries reference it.
+
+        entries.team_id is a foreign key, and the whole batch is one statement —
+        so a single id the seed doesn't know about would otherwise reject the
+        entire roster and leave the session with no drivers. A game patch adding
+        a team must not be able to cost us a session, so unknown ids are
+        inserted on sight under their enum name (or a placeholder).
+        """
+        if not team_ids:
+            return
+        rows = []
+        for team_id in sorted(team_ids):
+            name = safe_enum_name(Teams, team_id, None)
+            display = name.replace("_", " ").title()
+            rows.append((team_id, name, display))
+        self._execute_many(
+            """
+            INSERT INTO telemetry.teams (team_id, name, display_name)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (team_id) DO NOTHING
+            """,
+            rows,
+            table_name="telemetry.teams",
+        )
+
     def _resolve_user_ids(self, entries: list) -> dict[str, int]:
         """
         Resolve driver names to user IDs using identity.get_or_create_driver().
@@ -105,9 +132,15 @@ class EntriesRepository(RepositoryBase):
 
     def insert_entries_batch(self, entries: list) -> dict[int, int]:
         """
-        Insert multiple entries in a batch. Returns car_index -> user_id map.
+        Insert entries for the given drivers.
 
-        PK is (session_uid, user_id), with unique constraint on (session_uid, car_index).
+        Returns car_index -> user_id ONLY for rows the database confirms it
+        wrote. A caller uses the returned map to decide the roster is recorded,
+        so reporting rows that failed would leave the session running against a
+        roster that does not exist — and, because the caller then stops
+        retrying, it would never be repaired.
+
+        Returns an empty dict if the write failed.
         """
         if not entries:
             return {}
@@ -115,22 +148,33 @@ class EntriesRepository(RepositoryBase):
         for entry in entries:
             entry["driver_name"] = entry["driver_name"].replace("\x00", "")
 
+        self.ensure_teams({entry["team_id"] for entry in entries})
+
         user_id_map = self._resolve_user_ids(entries)
 
         sql = """
             INSERT INTO telemetry.entries (
                 session_uid, user_id, car_index,
                 team_id, race_number,
-                telemetry_setting,
-                livery_colors
+                driver_id, network_id, my_team,
+                platform, tech_level, show_online_names,
+                telemetry_public,
+                num_livery_colors, livery_colors
             ) VALUES (
-                %s, %s, %s, %s, %s, %s, %s
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
             )
             ON CONFLICT (session_uid, car_index) DO UPDATE SET
                 user_id = EXCLUDED.user_id,
                 team_id = EXCLUDED.team_id,
                 race_number = EXCLUDED.race_number,
-                telemetry_setting = EXCLUDED.telemetry_setting,
+                driver_id = EXCLUDED.driver_id,
+                network_id = EXCLUDED.network_id,
+                my_team = EXCLUDED.my_team,
+                platform = EXCLUDED.platform,
+                tech_level = EXCLUDED.tech_level,
+                show_online_names = EXCLUDED.show_online_names,
+                telemetry_public = EXCLUDED.telemetry_public,
+                num_livery_colors = EXCLUDED.num_livery_colors,
                 livery_colors = EXCLUDED.livery_colors
         """
 
@@ -155,11 +199,28 @@ class EntriesRepository(RepositoryBase):
                 entry["car_index"],
                 entry["team_id"],
                 entry["race_number"],
-                entry["telemetry_setting"],
+                entry["driver_id"],
+                entry["network_id"],
+                entry["my_team"],
+                safe_enum_name(Platform, entry["platform"], self._logger),
+                entry["tech_level"],
+                entry["show_online_names"],
+                entry["telemetry_public"],
+                entry["num_livery_colors"],
                 entry["livery_colors"],
             ))
 
-        self._execute_many(sql, params_list, table_name=self.TABLE_NAME)
+        if not params_list:
+            return {}
+
+        try:
+            self._execute_many_strict(sql, params_list, table_name=self.TABLE_NAME)
+        except Exception as e:
+            self._logger.error(
+                "Failed to insert %d entries for session %s: %s",
+                len(params_list), entries[0]["session_uid"], e, exc_info=True,
+            )
+            return {}
 
         if nationality_updates:
             nationality_sql = (

@@ -3,7 +3,7 @@
 import logging
 from typing import Optional
 
-from database.repositories import LapsRepository, TyreStintsRepository
+from database.repositories import LapsRepository, SessionBestsRepository, TyreStintsRepository
 from database.repositories.base import safe_enum_name
 from enums import ActualTyreCompound, VisualTyreCompound
 from utils.bounded_dict import BoundedDict
@@ -13,22 +13,32 @@ class LapHistoryService:
     """
     Handles Session History packets (Packet 11).
 
-    Writes to:
-    - laps table (one record per lap)
+    The packet cycles one car per packet — consecutive packets are different
+    drivers, keyed by m_carIdx.
 
-    Uses user_id (resolved from user_map) instead of car_index.
+    Writes to:
+    - laps (one row per completed lap)
+    - session_bests (which lap each of the driver's bests was set on)
+    - tyre_stints (only after final classification, from the bulk update)
     """
 
     def __init__(
         self,
         laps_repo: LapsRepository,
         tyre_stints_repo: TyreStintsRepository,
+        session_bests_repo: Optional[SessionBestsRepository] = None,
         logger: Optional[logging.Logger] = None,
     ):
         self._laps_repo = laps_repo
         self._tyre_stints_repo = tyre_stints_repo
+        self._session_bests_repo = session_bests_repo
         self._logger = logger or logging.getLogger(__name__)
         self._last_num_laps: BoundedDict[tuple, int] = BoundedDict(500)
+        # (session_uid, user_id) -> last written session-bests tuple. Packet 11
+        # arrives at ~20Hz cycling through cars, but a driver's bests change a
+        # handful of times a session — without this the listener would issue an
+        # UPSERT per packet to rewrite identical values.
+        self._last_bests: BoundedDict[tuple, tuple] = BoundedDict(500)
         self._warned_car_indices: BoundedDict[tuple, bool] = BoundedDict(50)
 
     def handle_session_history_packet(self, packet, user_map: dict[int, int]):
@@ -52,6 +62,7 @@ class LapHistoryService:
             return
 
         self._upsert_laps(session_uid, user_id, packet)
+        self._upsert_session_bests(session_uid, user_id, packet)
 
     def handle_tyre_stints(self, packet, user_map: dict[int, int]):
         """
@@ -119,6 +130,29 @@ class LapHistoryService:
             self._laps_repo.upsert_laps_batch(batch)
 
         self._last_num_laps[user_key] = current_num_laps
+
+    def _upsert_session_bests(self, session_uid: str, user_id: int, packet):
+        """Record which lap each of this driver's session bests was set on."""
+        if self._session_bests_repo is None:
+            return
+
+        def _lap_or_none(lap_num: int):
+            # 0 means no best has been set yet.
+            return lap_num or None
+
+        bests = (
+            _lap_or_none(packet.best_lap_time_lap_num),
+            _lap_or_none(packet.best_sector_1_lap_num),
+            _lap_or_none(packet.best_sector_2_lap_num),
+            _lap_or_none(packet.best_sector_3_lap_num),
+        )
+
+        key = (session_uid, user_id)
+        if self._last_bests.get(key) == bests:
+            return
+
+        self._session_bests_repo.upsert((session_uid, user_id) + bests)
+        self._last_bests[key] = bests
 
     def _upsert_tyre_stints(self, session_uid: str, user_id: int, packet):
         """Upsert tyre stint records from tyre_stints_list."""

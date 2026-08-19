@@ -1,4 +1,4 @@
-"""Packet dispatcher for routing UDP packets to appropriate services."""
+"""Packet dispatcher for routing UDP packets to the appropriate services."""
 
 import logging
 import threading
@@ -7,6 +7,7 @@ from typing import Any, Optional, Set
 from frame_buffer import FrameBuffer
 from packets import (
     PACKET_HEADER_FORMAT_SIZE,
+    Flashback,
     SafetyCar,
     packet_header,
     unpack_car_damage,
@@ -48,28 +49,40 @@ from services import (
 from utils.bounded_dict import BoundedDict
 from utils.bounded_set import BoundedSet
 
-# Session types to exclude from collection (unknown and time trial only)
+# Session types never collected: unknown, and time trial (which has its own
+# packet 14 and no meaningful multi-car data).
 EXCLUDED_SESSION_TYPES: Set[int] = {0, 18}
 
 # Race session types where lap positions are meaningful
 RACE_SESSION_TYPES: Set[int] = {15, 16, 17, 100}
 
-# Packet IDs that combine into a single car_frame row (buffered)
+# Packet IDs that describe the same simulation tick and combine into one
+# car_frame row.
 CAR_FRAME_PACKET_IDS: Set[int] = {0, 2, 6, 7, 10, 16}
 
 # Session-level event codes that don't require a user_map
 _SESSION_LEVEL_EVENT_CODES: Set[str] = {
-    "SSTA", "SEND", "LGOT", "CHQF", "RDFL", "DRSE", "DRSD", "STLG", "SCAR",
+    "SSTA", "SEND", "LGOT", "CHQF", "RDFL", "DRSE", "DRSD", "STLG", "SCAR", "FLBK", "BUTN",
 }
+
+# Safety car type 3 (formation lap) + event type 3 (resume race) is the game
+# telling us the formation lap is over.
+_FORMATION_LAP_SAFETY_CAR = 3
+_RESUME_RACE = 3
+
+# A car reporting this lap number cannot still be on the formation lap. Used as
+# a backstop so a missed start event can never cost a whole race's telemetry.
+_RACING_LAP_NUM = 2
 
 
 class PacketDispatcher:
     """
-    Routes UDP packets to appropriate service handlers.
+    Routes UDP packets to the appropriate service handlers.
 
     Independent packets (session, participants, events, classification, history,
-    lap positions) are processed immediately on arrival. Only car_frame packets
-    (0, 2, 6, 7, 10) are buffered to be combined into a single write.
+    lap positions, setups, tyre sets, motion ex, lobby) are processed on arrival.
+    Only the car_frame packets (0, 2, 6, 7, 10, 16) are buffered, so that the
+    packets describing one simulation tick become a single row.
     """
 
     def __init__(
@@ -104,13 +117,13 @@ class PacketDispatcher:
         self._excluded_sessions = BoundedSet(max_size=100)
         # session_uid -> {car_index: user_id}
         self._user_maps: BoundedDict[str, dict[int, int]] = BoundedDict(200)
-        # session_uid -> bool (True = race started or non-race session)
+        # session_uid -> bool (True = race under way, or a non-race session)
         self._race_started: BoundedDict[str, bool] = BoundedDict(200)
         # Sessions where final classification (Packet 8) has been received.
         # Tyre stints are only written from the bulk Session History update
         # that the game sends after classification.
         self._classification_received = BoundedSet(max_size=100)
-        # (session_uid, user_id) -> last seen lap number for lap completion detection
+        # (session_uid, user_id) -> last seen lap number, for lap completion detection
         self._last_lap_nums: BoundedDict[tuple, int] = BoundedDict(500)
 
         self._frame_buffer = FrameBuffer(
@@ -192,12 +205,16 @@ class PacketDispatcher:
                         return
                     self._known_sessions.add(session_uid)
                     self._session_service.handle_session_packet(packet)
-                    # Set race_started default: True for non-race, False for race
+                    # Non-race sessions are "started" from the first packet;
+                    # races wait for lights out or the end of the formation lap.
                     if session_uid not in self._race_started:
-                        self._race_started[session_uid] = packet.session_type not in RACE_SESSION_TYPES
+                        self._race_started[session_uid] = (
+                            packet.session_type not in RACE_SESSION_TYPES
+                        )
                     return
 
-                # Lobby Info packet (9) — process before known-session gate
+                # Lobby Info packet (9) — process before the known-session gate,
+                # since a lobby exists before any session packet arrives
                 if header.packet_id == 9:
                     if self._lobby_info_service:
                         packet = unpack_lobby_info(header, body)
@@ -219,26 +236,28 @@ class PacketDispatcher:
                         self._user_maps[session_uid] = new_map
                     return
 
-                # Events packet (3) — session-level events bypass user_map gate
+                # Events packet (3) — session-level events bypass the user_map gate
                 if header.packet_id == 3:
                     packet = unpack_event_packet(header, body)
                     event_code = str(packet.event_string_code).strip()[:10]
 
                     if event_code in _SESSION_LEVEL_EVENT_CODES:
-                        user_map = self._user_maps.get(session_uid, {}) or {}
+                        user_map = self._user_maps.get(session_uid) or {}
                         self._events_service.handle_event_packet(packet, user_map)
                         if event_code == "SEND":
                             self._frame_buffer.flush_session(session_uid)
-                        # Detect formation lap end → race start
+                        elif event_code == "FLBK":
+                            self._handle_flashback(session_uid, packet)
+                        elif event_code == "LGOT":
+                            # Lights out: the race is definitively under way.
+                            self._mark_race_started(session_uid, "lights out")
                         elif event_code == "SCAR" and isinstance(packet.event, SafetyCar):
-                            if packet.event.safety_car_type == 3 and packet.event.event_type == 3:
-                                self._race_started[session_uid] = True
-                                self._logger.info(
-                                    f"Race start detected for session {session_uid} (formation lap complete)"
-                                )
+                            if (packet.event.safety_car_type == _FORMATION_LAP_SAFETY_CAR
+                                    and packet.event.event_type == _RESUME_RACE):
+                                self._mark_race_started(session_uid, "formation lap complete")
                         return
 
-                    # Driver-specific events require user_map
+                    # Driver-specific events require a user_map
                     user_map = self._user_maps.get(session_uid)
                     if not user_map:
                         self._logger.debug(
@@ -256,33 +275,43 @@ class PacketDispatcher:
                     )
                     return
 
-                # Car Setup packet (5) — cache all driver setups
+                # Car Setup packet (5) — cache every driver's setup
                 if header.packet_id == 5:
                     if self._car_setup_service is not None:
                         packet = unpack_car_setup(header, body)
                         self._car_setup_service.handle_car_setup_packet(
-                            packet, session_uid, self._user_maps.get(session_uid, {}) or {},
+                            packet, session_uid, user_map,
                         )
                     return
 
-                # Tyre Sets packet (12) — cache available tyre sets
+                # Tyre Sets packet (12) — cache the available sets for one car
                 if header.packet_id == 12:
                     if self._tyre_sets_service is not None:
                         packet = unpack_tyre_sets(header, body)
-                        self._tyre_sets_service.handle_tyre_sets_packet(packet, user_map)
+                        self._tyre_sets_service.handle_tyre_sets_packet(
+                            packet,
+                            user_map,
+                            self._participants_service.get_restricted_indices(session_uid),
+                        )
                     return
 
-                # Motion Ex packet (13) — player-only, NOT buffered, write immediately
+                # Motion Ex packet (13) — player-only, written immediately (not buffered)
                 if header.packet_id == 13:
                     if self._motion_ex_service is not None:
                         packet = unpack_motion_ex(header, body)
-                        self._motion_ex_service.write_motion_ex(packet, user_map)
+                        self._motion_ex_service.write_motion_ex(
+                            packet,
+                            user_map,
+                            self._session_service.get_session_start(session_uid),
+                        )
                     return
 
                 # Final Classification packet (8) — process immediately
                 if header.packet_id == 8:
                     packet = unpack_final_classification(header, body)
-                    self._final_classification_service.handle_final_classification_packet(packet, user_map)
+                    self._final_classification_service.handle_final_classification_packet(
+                        packet, user_map
+                    )
                     self._classification_received.add(session_uid)
                     self._logger.info(
                         "Final classification received for session %s — "
@@ -299,7 +328,7 @@ class PacketDispatcher:
                         self._lap_history_service.handle_tyre_stints(packet, user_map)
                     return
 
-                # Lap Positions packet (15) — process immediately (race sessions only)
+                # Lap Positions packet (15) — race sessions only
                 if header.packet_id == 15:
                     session_type = self._session_service.get_session_type(session_uid)
                     if session_type in RACE_SESSION_TYPES:
@@ -307,7 +336,7 @@ class PacketDispatcher:
                         self._lap_positions_service.handle_lap_positions_packet(packet, user_map)
                     return
 
-                # Car frame packets (0, 2, 6, 7, 10) — buffer for combined write
+                # Car frame packets (0, 2, 6, 7, 10, 16) — buffer for a combined write
                 if header.packet_id in CAR_FRAME_PACKET_IDS:
                     self._frame_buffer.add(
                         session_uid=session_uid,
@@ -321,11 +350,53 @@ class PacketDispatcher:
             except Exception as e:
                 self._logger.error(f"Error handling packet: {e}", exc_info=True)
 
+    def _mark_race_started(self, session_uid: str, reason: str) -> None:
+        """Flip a race session out of formation-lap mode, once."""
+        if self._race_started.get(session_uid):
+            return
+        self._race_started[session_uid] = True
+        self._logger.info("Race start detected for session %s (%s)", session_uid, reason)
+
+    def _handle_flashback(self, session_uid: str, packet) -> None:
+        """
+        Discard the telemetry a flashback undid, and record that it happened.
+
+        A flashback rewinds m_sessionTime and m_frameIdentifier but not
+        m_overallFrameIdentifier, so without this the rows recorded during the
+        rewound-over stretch would sit in the database as if that run really
+        happened — producing duplicate laps at different times.
+        """
+        event = packet.event
+        if not isinstance(event, Flashback):
+            return
+
+        rewind_to = event.flashback_session_time
+        self._frame_buffer.discard_session(session_uid)
+
+        discarded = self._car_frame_service.discard_after(session_uid, rewind_to)
+        if self._motion_ex_service is not None:
+            self._motion_ex_service.discard_after(session_uid, rewind_to)
+
+        # Lap-completion detection tracks the highest lap number seen; after a
+        # rewind those counters are ahead of reality.
+        for key in [k for k in self._last_lap_nums.keys() if k[0] == session_uid]:
+            self._last_lap_nums[key] = 0
+
+        self._events_service.record_flashback(
+            session_uid,
+            packet.header.overall_frame_identifier,
+            packet.header.session_time,
+            event,
+            discarded,
+        )
+        self._logger.info(
+            "Flashback in session %s to session_time %.3f — discarded %s frame row(s)",
+            session_uid, rewind_to, discarded,
+        )
+
     def _flush_frame(self, session_uid: str, frame_id: int, packets: dict[int, Any]):
-        """
-        Flush a frame's car_frame packets (0+2+6+7+10) as a combined write.
-        """
-        user_map = self._user_maps.get(session_uid, {}) or {}
+        """Flush one frame's buffered packets (0, 2, 6, 7, 10, 16) as a combined write."""
+        user_map = self._user_maps.get(session_uid) or {}
         if not user_map:
             self._logger.debug(
                 f"Skipping frame {frame_id} for session {session_uid} — no user_map yet"
@@ -333,59 +404,57 @@ class PacketDispatcher:
             return
 
         motion_data = None
+        telemetry_packet = None
         telemetry_data = None
         lap_data_list = None
         car_status_data = None
         car_damage_data = None
         car_telemetry2_data = None
-        session_time = 0.0
 
-        # Determine session_time from whichever packet is available
-        for pid in (0, 6, 2):
-            if pid in packets:
-                header, _ = packets[pid]
-                session_time = header.session_time
-                break
+        # Every packet in the frame carries the same session_time; take it from
+        # whichever one is present.
+        first_header = next(iter(packets.values()))[0]
+        session_time = first_header.session_time
 
         if session_time < 1.0:
             return
 
         if 0 in packets:
             header, body = packets[0]
-            motion_packet = unpack_motion(header, body)
-            motion_data = motion_packet.car_motion_data
-            session_time = header.session_time
+            motion_data = unpack_motion(header, body).car_motion_data
 
         if 6 in packets:
             header, body = packets[6]
             telemetry_packet = unpack_car_telemetry(header, body)
             telemetry_data = telemetry_packet.car_telemetry_data
-            session_time = header.session_time
 
         if 2 in packets:
             header, body = packets[2]
-            lap_data_packet = unpack_lap_data(header, body)
-            lap_data_list = lap_data_packet.lap_data
-            session_time = header.session_time
+            lap_data_list = unpack_lap_data(header, body).lap_data
 
         if 7 in packets:
             header, body = packets[7]
-            packet = unpack_car_status(header, body)
-            car_status_data = packet.car_status_data
+            car_status_data = unpack_car_status(header, body).car_status_data
 
         if 10 in packets:
             header, body = packets[10]
-            damage_packet = unpack_car_damage(header, body)
-            car_damage_data = damage_packet.car_damage_data
+            car_damage_data = unpack_car_damage(header, body).car_damage_data
 
         if 16 in packets:
             header, body = packets[16]
-            telemetry2_packet = unpack_car_telemetry2(header, body)
-            car_telemetry2_data = telemetry2_packet.car_telemetry2_data
+            car_telemetry2_data = unpack_car_telemetry2(header, body).car_telemetry2_data
 
-        race_started_val = self._race_started.get(session_uid, True)
-        race_started = race_started_val if race_started_val is not None else True
+        # Backstop for a missed start event: nobody is on lap 2 during a
+        # formation lap, so seeing one means the race is running.
+        if lap_data_list and not self._race_started.get(session_uid):
+            if any(
+                lap.current_lap_num >= _RACING_LAP_NUM
+                for car_index, lap in enumerate(lap_data_list)
+                if car_index in user_map
+            ):
+                self._mark_race_started(session_uid, "car on a racing lap")
 
+        race_started = bool(self._race_started.get(session_uid, True))
         restricted_indices = self._participants_service.get_restricted_indices(session_uid)
 
         if motion_data or telemetry_data or lap_data_list or car_status_data:
@@ -400,12 +469,14 @@ class PacketDispatcher:
                 car_status_data=car_status_data,
                 car_damage_data=car_damage_data,
                 car_telemetry2_data=car_telemetry2_data,
+                telemetry_packet=telemetry_packet,
+                player_car_index=first_header.player_car_index,
                 restricted_indices=restricted_indices,
+                session_start=self._session_service.get_session_start(session_uid),
                 race_started=race_started,
             )
 
-        # Detect lap completions for setup + tyre set writes
-        if lap_data_list:
+        if lap_data_list and race_started:
             self._check_lap_completions(session_uid, user_map, lap_data_list)
 
     def _check_lap_completions(
@@ -414,18 +485,19 @@ class PacketDispatcher:
         user_map: dict[int, int],
         lap_data_list,
     ):
-        """Detect lap completions and notify setup/tyre services."""
+        """Detect lap completions and notify the setup and tyre-set services."""
         for car_index, lap_data in enumerate(lap_data_list):
             user_id = user_map.get(car_index)
             if user_id is None:
                 continue
 
+            # Only count laps completed while actually driving (flying lap or on track).
             if lap_data.driver_status not in (1, 4):
                 continue
 
             key = (session_uid, user_id)
             current_lap = lap_data.current_lap_num
-            last_lap: int = self._last_lap_nums.get(key, 0) or 0
+            last_lap: int = self._last_lap_nums.get(key) or 0
 
             if current_lap > last_lap and last_lap > 0:
                 completed_lap = last_lap

@@ -27,11 +27,11 @@ class FinalClassificationRepository(RepositoryBase):
             INSERT INTO telemetry.race_classification (
                 session_uid, user_id, position, num_laps, grid_position,
                 num_pit_stops, result_status, result_reason,
-                best_lap_time_ms, total_race_time, penalties_time,
+                best_lap_time_ms, game_points, total_race_time, penalties_time,
                 num_penalties, num_tyre_stints,
                 tyre_stints_actual, tyre_stints_visual, tyre_stints_end_laps
             ) VALUES (
-                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
             )
             ON CONFLICT (session_uid, user_id) DO UPDATE SET
                 position = EXCLUDED.position,
@@ -41,6 +41,7 @@ class FinalClassificationRepository(RepositoryBase):
                 result_status = EXCLUDED.result_status,
                 result_reason = EXCLUDED.result_reason,
                 best_lap_time_ms = EXCLUDED.best_lap_time_ms,
+                game_points = EXCLUDED.game_points,
                 total_race_time = EXCLUDED.total_race_time,
                 penalties_time = EXCLUDED.penalties_time,
                 num_penalties = EXCLUDED.num_penalties,
@@ -61,6 +62,7 @@ class FinalClassificationRepository(RepositoryBase):
                 safe_enum_name(ResultStatus, c["result_status"], self._logger),
                 safe_enum_name(ResultReason, c["result_reason"], self._logger) if c.get("result_reason") is not None else None,
                 c["best_lap_time_ms"],
+                c["game_points"],
                 c["total_race_time"],
                 c["penalties_time"],
                 c["num_penalties"],
@@ -86,15 +88,20 @@ class FinalClassificationRepository(RepositoryBase):
         sql = """
             INSERT INTO telemetry.qualifying_classification (
                 session_uid, user_id, position, num_laps,
-                best_lap_time_ms, result_status
+                best_lap_time_ms, result_status, result_reason,
+                game_points, penalties_time, num_penalties
             ) VALUES (
-                %s, %s, %s, %s, %s, %s
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
             )
             ON CONFLICT (session_uid, user_id) DO UPDATE SET
                 position = EXCLUDED.position,
                 num_laps = EXCLUDED.num_laps,
                 best_lap_time_ms = EXCLUDED.best_lap_time_ms,
-                result_status = EXCLUDED.result_status
+                result_status = EXCLUDED.result_status,
+                result_reason = EXCLUDED.result_reason,
+                game_points = EXCLUDED.game_points,
+                penalties_time = EXCLUDED.penalties_time,
+                num_penalties = EXCLUDED.num_penalties
         """
 
         params_list = [
@@ -105,6 +112,11 @@ class FinalClassificationRepository(RepositoryBase):
                 c["num_laps"],
                 c["best_lap_time_ms"],
                 safe_enum_name(ResultStatus, c["result_status"], self._logger),
+                safe_enum_name(ResultReason, c["result_reason"], self._logger)
+                if c.get("result_reason") is not None else None,
+                c["game_points"],
+                c["penalties_time"],
+                c["num_penalties"],
             )
             for c in classifications
         ]

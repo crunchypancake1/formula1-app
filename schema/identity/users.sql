@@ -1,5 +1,7 @@
+CREATE SCHEMA IF NOT EXISTS identity;
+
 -- Unified identity table: every participant (Discord-linked or not) is a row.
--- Discord fields NULL = unlinked driver (formerly "phantom").
+-- Discord fields NULL = driver seen in telemetry but not linked to a Discord account.
 CREATE TABLE IF NOT EXISTS identity.users (
     id SERIAL PRIMARY KEY,
     driver_name VARCHAR(255) NOT NULL,
@@ -16,8 +18,7 @@ CREATE TABLE IF NOT EXISTS identity.users (
 );
 
 -- Case-insensitive uniqueness enforcement
-DROP INDEX IF EXISTS identity.idx_users_driver_name_lower;
-CREATE UNIQUE INDEX idx_users_driver_name_lower
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_driver_name_lower
 ON identity.users(lower(driver_name));
 
 -- Exact lookup

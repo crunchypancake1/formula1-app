@@ -1,82 +1,50 @@
 import os, sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from types import SimpleNamespace
-
+from database.repositories.car_frame import COLUMN_INDEX
+from packets.constants import MAX_CARS
 from services.car_frame import CarFrameService
 
+from . import factories
 from .mock_repo import MockRepo
+
+# Row tuples are addressed by column name so these tests cannot drift when a
+# column is added — the same lookup the service itself uses.
+IDX = COLUMN_INDEX
 
 
 def _make_motion(car_index):
-    return SimpleNamespace(
-        world_position_x=float(car_index), world_position_y=0.0, world_position_z=0.0,
-        world_velocity_x=0.0, world_velocity_y=0.0, world_velocity_z=0.0,
-        g_force_lateral=0.0, g_force_longitudinal=0.0, g_force_vertical=0.0,
-        yaw=0.0, pitch=0.0, roll=0.0,
-    )
+    return factories.make_motion(car_index)
 
 
 def _make_telemetry(car_index):
-    return SimpleNamespace(
-        speed=200 + car_index, throttle=1.0, steer=0.0, brake=0.0, clutch=0, gear=7,
-        engine_rpm=11000, drs=0, engine_temperature=100,
-        brakes_temperature=(400, 400, 400, 400),
-        tyres_surface_temp=(100, 100, 100, 100),
-        tyres_inner_temp=(95, 95, 95, 95),
-        tyres_pressure=(23.5, 23.5, 22.0, 22.0),
-        surface_type=(0, 0, 0, 0),
-    )
+    return factories.make_telemetry(car_index)
 
 
 def _make_lap(car_index, car_position=1, driver_status=1, gap_to_car_ahead=0):
-    return SimpleNamespace(
-        current_lap_num=1, lap_distance=1000.0, current_lap_time_in_ms=30000,
-        car_position=car_position, sector=0, pit_status=0, driver_status=driver_status,
-        result_status=2,
-        delta_to_race_leader_minutes_part=0, delta_to_race_leader_ms_part=0,
-        delta_to_car_in_front_minutes_part=0, delta_to_car_in_front_ms_part=gap_to_car_ahead,
-        total_distance=1000.0, safety_car_delta=0.0,
-        num_pit_stops=0, pit_lane_timer_active=0,
-        pit_lane_time_in_lane_in_ms=0, pit_stop_timer_in_ms=0,
-        pit_stop_should_serve_pen=0,
+    return factories.make_lap(
+        car_position=car_position,
+        driver_status=driver_status,
+        gap_to_car_ahead=gap_to_car_ahead,
     )
 
 
-def _make_status():
-    return SimpleNamespace(
-        pit_limiter=0, drs_allowed=1, drs_activation_distance=100,
-        actual_tyre_compound=20, visual_tyre_compound=16,
-        tyres_age_laps=5, vehicle_fia_flags=0, network_paused=0,
-        front_brake_bias=58, fuel_in_tank=50.0, fuel_remaining_laps=10.0,
-        ers_store_energy=4000000.0, ers_deploy_mode=1, ers_deployed_this_lap=100000.0,
-        ers_harvest_limit_per_lap=200000.0,
-    )
+def _make_status(**overrides):
+    return factories.make_status(**overrides)
 
 
-def _make_damage():
-    return SimpleNamespace(
-        tyres_wear=(1.0, 1.0, 1.0, 1.0), tyres_damage=(0, 0, 0, 0),
-        brakes_damage=(0, 0, 0, 0), tyre_blisters=(0, 0, 0, 0),
-        front_left_wing_damage=0, front_right_wing_damage=0, rear_wing_damage=0,
-        floor_damage=0, diffuser_damage=0, sidepod_damage=0,
-        drs_fault=0, ers_fault=0, gearbox_damage=0, engine_damage=0,
-        engine_mguh_wear=0, engine_es_wear=0, engine_ce_wear=0,
-        engine_ice_wear=0, engine_mguk_wear=0, engine_tc_wear=0,
-        engine_blown=0, engine_seized=0,
-    )
+def _make_damage(**overrides):
+    return factories.make_damage(**overrides)
 
 
 def _make_telemetry2(regs_2026=1, driving_wrong_way=0):
-    return SimpleNamespace(
-        active_aero_mode=1, active_aero_available=1, active_aero_activation_distance=50,
-        overtake_available=1, overtake_active=0, overtake_activation_distance=100,
-        regulations_2026=regs_2026, driving_wrong_way=driving_wrong_way,
+    return factories.make_telemetry2(
+        regulations_2026=regs_2026, driving_wrong_way=driving_wrong_way
     )
 
 
-def _pad_list(items, count=22, default=None):
-    """Pad a list to 22 elements."""
+def _pad_list(items, count=MAX_CARS, default=None):
+    """Pad a per-car list out to the full car array the game always sends."""
     return items + [default] * (count - len(items))
 
 
@@ -161,9 +129,8 @@ def test_gap_behind_computation():
     args, _ = car_frame_repo.last_call("insert_batch")
     rows = args[0]
     # Find the P1 row (user_id=100)
-    p1_row = [r for r in rows if r[1] == 100][0]
-    # gap_to_car_behind_ms is at index 55
-    assert p1_row[55] == 1500
+    p1_row = [r for r in rows if r[IDX["user_id"]] == 100][0]
+    assert p1_row[IDX["gap_to_car_behind_ms"]] == 1500
 
 
 def test_missing_data_uses_none_tuples():
@@ -179,8 +146,7 @@ def test_missing_data_uses_none_tuples():
     )
     args, _ = car_frame_repo.last_call("insert_batch")
     row = args[0][0]
-    # Motion fields are indices 4-15 (12 fields), should all be None
-    motion_fields = row[4:16]
+    motion_fields = row[IDX["world_pos_x"]:IDX["roll"] + 1]
     assert all(v is None for v in motion_fields)
 
 
@@ -197,8 +163,7 @@ def test_position_255_becomes_none():
     )
     args, _ = car_frame_repo.last_call("insert_batch")
     row = args[0][0]
-    # car_position is at index 48
-    assert row[48] is None
+    assert row[IDX["position"]] is None
 
 
 def test_tyre_age_255_becomes_none():
@@ -216,23 +181,25 @@ def test_tyre_age_255_becomes_none():
     )
     args, _ = car_frame_repo.last_call("insert_batch")
     row = args[0][0]
-    # status fields start at 4+12+29+18 = 63, tyres_age_laps is 6th field (index 68)
-    # Layout: meta(4) + motion(12) + telemetry(29) + lap(18) + status(8)
-    # status: pit_limiter(63), drs_allowed(64), drs_activation_distance(65),
-    #         actual_tyre(66), visual_tyre(67), tyres_age_laps(68)
-    assert row[68] is None
+    assert row[IDX["tyres_age_laps"]] is None
 
 
-# --- Task 7: restricted-telemetry / packet-16 smoke coverage ---
-# status_ext fields (7) start at index 71 (4 + 12 + 29 + 18 + 8 = 71):
-#   front_brake_bias(71), fuel_in_tank(72), fuel_remaining_laps(73),
-#   ers_store_energy(74), ers_deploy_mode(75), ers_deployed_this_lap(76),
-#   ers_harvest_limit_per_lap(77)
-# telemetry2 fields (8) start at index 78:
-#   active_aero_mode(78), active_aero_available(79),
-#   active_aero_activation_distance(80), overtake_available(81),
-#   overtake_active(82), overtake_activation_distance(83),
-#   is_2026_regulations(84), driving_wrong_way(85)
+# --- Restricted-telemetry and packet-16 coverage ---
+
+# The Car Status fields the game zeroes for a Restricted driver.
+RESTRICTED_STATUS_COLUMNS = (
+    "front_brake_bias", "fuel_mix", "fuel_in_tank", "fuel_capacity",
+    "fuel_remaining_laps", "ers_store_energy", "ers_deploy_mode",
+    "ers_deployed_this_lap", "ers_harvest_limit_per_lap",
+    "ers_harvested_this_lap_mguk", "ers_harvested_this_lap_mguh",
+    "engine_power_ice", "engine_power_mguk",
+)
+
+# The packet-16 fields that only mean anything under 2026 regulations.
+REGS_GATED_COLUMNS = (
+    "active_aero_mode", "active_aero_available", "active_aero_activation_distance",
+    "overtake_available", "overtake_active", "overtake_activation_distance",
+)
 
 
 def test_restricted_car_status_extended_fields_are_null():
@@ -249,7 +216,7 @@ def test_restricted_car_status_extended_fields_are_null():
     )
     args, _ = car_frame_repo.last_call("insert_batch")
     row = args[0][0]
-    assert all(v is None for v in row[71:78])
+    assert all(row[IDX[c]] is None for c in RESTRICTED_STATUS_COLUMNS)
 
 
 def test_unrestricted_car_status_extended_fields_are_populated():
@@ -266,8 +233,11 @@ def test_unrestricted_car_status_extended_fields_are_populated():
     )
     args, _ = car_frame_repo.last_call("insert_batch")
     row = args[0][0]
-    assert row[71] == 58  # front_brake_bias
-    assert row[77] == 200000.0  # ers_harvest_limit_per_lap
+    assert row[IDX["front_brake_bias"]] == 58
+    assert row[IDX["ers_harvest_limit_per_lap"]] == 200000.0
+    assert row[IDX["fuel_capacity"]] == 110.0
+    assert row[IDX["ers_harvested_this_lap_mguk"]] == 50000.0
+    assert row[IDX["engine_power_ice"]] == 560000.0
 
 
 def test_restricted_car_damage_row_is_skipped():
@@ -289,7 +259,7 @@ def test_restricted_car_damage_row_is_skipped():
     rows = args[0]
     # Only car 1 (unrestricted) gets a damage row; car 0 is skipped entirely.
     assert len(rows) == 1
-    assert rows[0][1] == 101
+    assert rows[0][2] == 101  # (timestamp, session_uid, user_id, ...)
 
 
 def test_local_player_never_restricted_even_if_own_telemetry_restricted():
@@ -321,8 +291,8 @@ def test_local_player_never_restricted_even_if_own_telemetry_restricted():
     )
     args, _ = car_frame_repo.last_call("insert_batch")
     row = args[0][0]
-    assert row[71] == 58  # front_brake_bias populated, not NULL
-    assert row[77] == 200000.0  # ers_harvest_limit_per_lap populated, not NULL
+    assert all(row[IDX[c]] is not None for c in RESTRICTED_STATUS_COLUMNS)
+    assert row[IDX["front_brake_bias"]] == 58
 
     damage_args, _ = car_frame_damage_repo.last_call("insert_batch")
     damage_rows = damage_args[0]
@@ -344,10 +314,31 @@ def test_telemetry2_gated_fields_null_when_not_2026_regs():
     )
     args, _ = car_frame_repo.last_call("insert_batch")
     row = args[0][0]
-    # 7 regs-gated fields are None (indices 78-84)
-    assert all(v is None for v in row[78:85])
-    # driving_wrong_way (index 85) stays populated regardless of regs
-    assert row[85] is True
+    assert all(row[IDX[c]] is None for c in REGS_GATED_COLUMNS)
+    # A classic car is positively known not to be on 2026 regs — that is a
+    # fact, so it is stored as False. NULL here would mean "no packet 16".
+    assert row[IDX["is_2026_regulations"]] is False
+    # driving_wrong_way is meaningful on any car, regs or not.
+    assert row[IDX["driving_wrong_way"]] is True
+
+
+def test_telemetry2_absent_leaves_regs_flag_unknown():
+    """No packet 16 at all is different from a car that is not on 2026 regs."""
+    svc, car_frame_repo = _make_service()
+    svc.write_frame(
+        session_uid="123", session_time=10.0, overall_frame_identifier=1,
+        user_map={0: 100},
+        motion_data=_pad_list([_make_motion(0)]),
+        telemetry_data=_pad_list([_make_telemetry(0)]),
+        lap_data_list=_pad_list([_make_lap(0)]),
+        car_status_data=_pad_list([_make_status()]),
+        car_telemetry2_data=None,
+        race_started=True,
+    )
+    args, _ = car_frame_repo.last_call("insert_batch")
+    row = args[0][0]
+    assert row[IDX["is_2026_regulations"]] is None
+    assert row[IDX["driving_wrong_way"]] is None
 
 
 def test_telemetry2_fields_populated_when_2026_regs():
@@ -364,5 +355,6 @@ def test_telemetry2_fields_populated_when_2026_regs():
     )
     args, _ = car_frame_repo.last_call("insert_batch")
     row = args[0][0]
-    assert row[78] == 1  # active_aero_mode
-    assert row[84] is True  # is_2026_regulations
+    assert row[IDX["active_aero_mode"]] == 1
+    assert row[IDX["is_2026_regulations"]] is True
+    assert all(row[IDX[c]] is not None for c in REGS_GATED_COLUMNS)

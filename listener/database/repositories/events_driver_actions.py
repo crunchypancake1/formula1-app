@@ -29,7 +29,7 @@ class EventsDriverActionsRepository(RepositoryBase):
                 session_uid, overall_frame_identifier, event_code,
                 session_time, user_id, stop_time
             ) VALUES (%s, %s, %s, %s, %s, %s)
-            ON CONFLICT (session_uid, overall_frame_identifier, event_code) DO NOTHING
+            ON CONFLICT (session_uid, overall_frame_identifier, event_code, user_id) DO NOTHING
         """
         self._execute(
             sql,

@@ -1,6 +1,12 @@
 CREATE SCHEMA IF NOT EXISTS telemetry;
 
--- Tracks table
+-- Tracks table. Holds only track-static data: everything here is a property of
+-- the circuit, not of any one session.
+--
+-- track_id is int8 on the wire (m_trackId), so -1 is the "unknown" value.
+--
+-- marshal_zones stores zone *positions* only. Zone flags are live race-control
+-- state and belong to telemetry.session_timeline.marshal_zone_flags.
 CREATE TABLE IF NOT EXISTS telemetry.tracks (
     track_id SMALLINT PRIMARY KEY,
     name VARCHAR(50) NOT NULL UNIQUE,
@@ -17,14 +23,7 @@ CREATE TABLE IF NOT EXISTS telemetry.tracks (
     drs_zones JSONB
 );
 
--- 2026 Season Pack: active aero and DRS zone data (track-static, from the
--- Session packet). Idempotent upgrade path for pre-existing deployments.
-ALTER TABLE telemetry.tracks ADD COLUMN IF NOT EXISTS active_aero_track_status SMALLINT;
-ALTER TABLE telemetry.tracks ADD COLUMN IF NOT EXISTS active_aero_zones_full JSONB;
-ALTER TABLE telemetry.tracks ADD COLUMN IF NOT EXISTS active_aero_zones_partial JSONB;
-ALTER TABLE telemetry.tracks ADD COLUMN IF NOT EXISTS drs_zones JSONB;
-
--- Seed tracks with info from F1 25 / F1 26 game (track_length in meters, pit_speed_limit in km/h)
+-- Seed tracks with info from the F1 26 game (track_length in metres, pit_speed_limit in km/h)
 INSERT INTO telemetry.tracks (track_id, name, display_name, country, track_length, pit_speed_limit) VALUES
     (0,  'MELBOURNE',           'Albert Park',                        'Australia',            5278, 80),
     (2,  'SHANGHAI',            'Shanghai International Circuit',     'China',                5451, 80),
@@ -54,7 +53,7 @@ INSERT INTO telemetry.tracks (track_id, name, display_name, country, track_lengt
     (40, 'AUSTRIA_REVERSE',     'Red Bull Ring (Reverse)',            'Austria',              4318, 80),
     (41, 'ZANDVOORT_REVERSE',   'Circuit Zandvoort (Reverse)',        'Netherlands',          4259, 80),
     (42, 'MADRID',              'Madrid',                             'Spain',                NULL, NULL),
-    (255,'UNKNOWN',             'Unknown Track',                      'Unknown',              NULL, NULL)
+    (-1, 'UNKNOWN',             'Unknown Track',                      'Unknown',              NULL, NULL)
 ON CONFLICT (track_id) DO UPDATE SET
     track_length = COALESCE(telemetry.tracks.track_length, EXCLUDED.track_length),
     pit_speed_limit = COALESCE(telemetry.tracks.pit_speed_limit, EXCLUDED.pit_speed_limit);

@@ -1,8 +1,9 @@
 #!/bin/bash
 set -e
 
-# Database initialization script for schema-based separation
-# Creates single app database with telemetry and webapp schemas
+# Database initialization script.
+# Creates the app database with the identity and telemetry schemas.
+# run_schema.py creates the tables inside them.
 
 APP_DB="${APP_DB:-f1_app}"
 
@@ -27,17 +28,9 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$APP_DB" <<-EOSQL
     -- Create telemetry schema (immutable game data, written by listener)
     CREATE SCHEMA IF NOT EXISTS telemetry;
 
-    -- Create webapp schema (mutable app data, managed by API)
-    CREATE SCHEMA IF NOT EXISTS webapp;
-
-    -- Create ml schema (derived/computed ML data)
-    CREATE SCHEMA IF NOT EXISTS ml;
-
     -- Grant permissions (default user has full access)
     GRANT ALL PRIVILEGES ON SCHEMA identity TO "$POSTGRES_USER";
     GRANT ALL PRIVILEGES ON SCHEMA telemetry TO "$POSTGRES_USER";
-    GRANT ALL PRIVILEGES ON SCHEMA webapp TO "$POSTGRES_USER";
-    GRANT ALL PRIVILEGES ON SCHEMA ml TO "$POSTGRES_USER";
 EOSQL
 
-echo "F1 database initialized: $APP_DB (with TimescaleDB, identity, telemetry, webapp, and ml schemas)"
+echo "F1 database initialized: $APP_DB (TimescaleDB, identity and telemetry schemas)"

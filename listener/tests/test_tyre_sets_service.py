@@ -1,7 +1,9 @@
 import os, sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from types import SimpleNamespace
+from packets.tyre_sets import TyreSetsPacket
+
+from . import factories
 
 from services.tyre_sets import TyreSetsService
 
@@ -9,28 +11,24 @@ from .mock_repo import MockRepo
 
 
 def _make_tyre_set(available=1, actual_compound=20, visual_compound=16,
-                   wear=10.0, life_span=20, usable_life=15,
-                   lap_delta_time=50, fitted=0):
-    return SimpleNamespace(
-        available=available,
-        actual_compound=actual_compound,
-        visual_compound=visual_compound,
-        wear=wear,
-        life_span=life_span,
-        usable_life=usable_life,
-        lap_delta_time=lap_delta_time,
-        fitted=fitted,
+                   wear=10, life_span=20, usable_life=18, lap_delta_time=0,
+                   fitted=0, recommended_session=15):
+    return factories.make_tyre_set(
+        available=available, actual_compound=actual_compound,
+        visual_compound=visual_compound, wear=wear, life_span=life_span,
+        usable_life=usable_life, lap_delta_time=lap_delta_time,
+        fitted=fitted, recommended_session=recommended_session,
     )
 
 
-def _make_tyre_sets_packet(session_uid=123, car_idx=0, tyre_set_data=None):
+def _make_tyre_sets_packet(session_uid=123, car_idx=0, tyre_set_data=None, fitted_idx=0):
     if tyre_set_data is None:
         tyre_set_data = [_make_tyre_set()]
-    header = SimpleNamespace(session_uid=session_uid)
-    return SimpleNamespace(
-        header=header,
+    return TyreSetsPacket(
+        header=factories.make_header(packet_id=12, session_uid=session_uid),
         car_idx=car_idx,
         tyre_set_data=tyre_set_data,
+        fitted_idx=fitted_idx,
     )
 
 

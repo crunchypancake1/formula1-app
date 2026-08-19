@@ -1,9 +1,12 @@
--- Weather forecast table (source: Session packet, Packet 1)
--- Stores latest forecast predictions only (max 64 rows per session)
--- Uses upsert to keep forecasts current throughout session
+-- Weather forecast (source: Session packet, Packet 1)
+--
+-- Holds the latest forecast only (max 64 samples per session), upserted as it
+-- changes. forecast_session_type is the session each sample predicts for — a
+-- practice session carries forecast samples for qualifying and the race too.
 CREATE TABLE IF NOT EXISTS telemetry.weather_forecast (
     session_uid VARCHAR(255) NOT NULL REFERENCES telemetry.sessions(session_uid) ON DELETE CASCADE,
     forecast_index SMALLINT NOT NULL,
+    forecast_session_type VARCHAR(50) NOT NULL,
     time_offset_minutes SMALLINT NOT NULL,
     weather VARCHAR(50) NOT NULL,
     track_temperature SMALLINT NOT NULL,

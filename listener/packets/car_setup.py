@@ -52,7 +52,13 @@ class CarSetupPacket:
 
 
 def unpack_car_setup(packet_header: PacketHeader, data: bytes) -> CarSetupPacket:
-    """Unpack Car Setup packet (Packet ID: 5). 22 cars of setup data."""
+    """
+    Unpack Car Setup packet (Packet ID: 5). MAX_CARS car slots plus the
+    packet-level next front wing value.
+
+    Online you only receive your own setup — every other slot arrives zeroed
+    regardless of that driver's telemetry setting, and spectators get none.
+    """
     car_data_bytes = data[:(_CAR_SETUP_FORMAT_SIZE * MAX_CARS)]
     remaining = data[(_CAR_SETUP_FORMAT_SIZE * MAX_CARS):]
 

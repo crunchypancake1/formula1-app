@@ -4,6 +4,10 @@ import { latestSession } from "./queries/sessions";
 
 const app = new Hono<{ Bindings: Env }>();
 
+app.get("/", (c) =>
+  c.json({ service: "formula1-bot", status: "ok", health: "/health" })
+);
+
 app.get("/health", async (c) => {
   const sql = connect(c.env);
   try {

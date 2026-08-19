@@ -464,13 +464,18 @@ export function parseMs(value: string | number | null | undefined): number | nul
 }
 
 /**
- * Decode an array column (`marshal_zone_flags`, `livery_colors`,
- * `tyre_stints_actual`, `weekend_structure`, ...). The same `fetch_types: false`
- * that leaves BIGINT as a string (see `parseMs`) also stops postgres.js from
- * inflating *any* array type into a JS array — every array column comes back as
- * its raw Postgres literal (`{a,b,c}`, `{}` for empty, quoted elements as
- * `{"a,b",c}`) instead. Passing an already-parsed array through unchanged
- * makes this safe to apply defensively without knowing the caller's fetch_types.
+ * Decode a text array column (`marshal_zone_flags`, `weekend_structure`, ...)
+ * from its raw Postgres literal (`{a,b,c}`, `{}` for empty, quoted elements as
+ * `{"a,b",c}`).
+ *
+ * The same `fetch_types: false` that leaves BIGINT as a string (see `parseMs`)
+ * also stops postgres.js from learning array type oids from the database, so
+ * without help *every* array column arrives as that literal instead of a JS
+ * array — which would make the array-typed fields on the row models above a lie.
+ * `connect()` registers this as the parser for the text array oids so the lie
+ * never happens; it stays exported because an already-parsed array passes
+ * through unchanged, making it safe to apply defensively to a row that reached
+ * you from somewhere else.
  */
 export function parsePgArray(value: string | string[] | null | undefined): string[] | null {
   if (value === null || value === undefined) return null;
@@ -505,6 +510,26 @@ export function parsePgArray(value: string | string[] | null | undefined): strin
   elements.push(current);
 
   return elements;
+}
+
+/**
+ * Decode a numeric array column (`livery_colors`, `tyre_stints_actual`,
+ * `tyre_stints_visual`, `tyre_stints_end_laps`, `lap_positions.positions`).
+ *
+ * The counterpart to `parsePgArray` for the smallint/integer array oids —
+ * `connect()` registers it for those so the `number[]` fields on the row models
+ * above hold actual numbers. Every one of these columns is NOT NULL and holds no
+ * NULL elements, so element-wise coercion is total; a null here means the whole
+ * value was absent.
+ */
+export function parsePgNumberArray(
+  value: string | number[] | null | undefined
+): number[] | null {
+  if (value === null || value === undefined) return null;
+  if (Array.isArray(value)) return value;
+
+  const elements = parsePgArray(value);
+  return elements === null ? null : elements.map(Number);
 }
 
 /**

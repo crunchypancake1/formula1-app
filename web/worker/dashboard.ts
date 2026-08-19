@@ -134,11 +134,20 @@ body {
   color: var(--text-dim); margin: 0 0 0.75rem;
 }
 
-/* ---- track map ---- */
+/* ---- track map ----
+   The layout SVGs ship their own <style> block, but an inline SVG's style
+   element is document-global, so its bare .zone / .corner-num / .corner-dot /
+   .sf-line rules would apply to the whole page. It is stripped on injection
+   (see ensureTrackMap) and its rules live here instead, scoped to the map. */
 .track-map-wrap { position: relative; aspect-ratio: 4 / 3; }
 .track-map-wrap svg.layout { width: 100%; height: 100%; color: #3a3a46; }
-.track-map-wrap .zone { color: #3a3a46; }
-.track-map-wrap .corner-num, .track-map-wrap .corner-dot { fill: #4b4b5a; }
+.track-map-wrap .zone {
+  color: #3a3a46; stroke: currentColor; fill: none;
+  stroke-width: 10; stroke-linejoin: round; stroke-linecap: round; opacity: 0.85;
+}
+.track-map-wrap .corner-num, .track-map-wrap .corner-dot { fill: #4b4b5a; stroke: none; }
+.track-map-wrap .corner-num { font: bold 12px Arial, sans-serif; }
+.track-map-wrap .sf-line { stroke: currentColor; stroke-width: 3; }
 .car-dot {
   position: absolute; width: 15px; height: 15px; border-radius: 50%;
   border: 2px solid #0a0a0d; transform: translate(-50%, -50%);
@@ -192,7 +201,7 @@ table.board tr.retired td { opacity: 0.45; }
   padding: 0.5rem 0.25rem; border-bottom: 1px solid var(--border); font-size: 0.85rem;
 }
 .feed-list li:last-child { border-bottom: none; }
-.feed-time { color: var(--text-dim); font-variant-numeric: tabular-nums; font-size: 0.75rem; width: 3.4rem; flex: none; }
+.feed-time { color: var(--text-dim); font-variant-numeric: tabular-nums; font-size: 0.75rem; width: 4.2rem; flex: none; }
 .feed-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; margin-top: 0.35rem; }
 .feed-dot.flag { background: var(--text-dim); }
 .feed-dot.lights { background: var(--yellow); }
@@ -266,12 +275,18 @@ const SCRIPT = `
     return "+" + (n / 1000).toFixed(3);
   }
 
+  // Rolls over to h:mm:ss past the hour. Both callers routinely go there — a race
+  // runs to a two-hour limit, and the feed stamps events with session_time — and
+  // "83:12" reads as a broken clock rather than an hour and 23 minutes.
   function formatClock(totalSeconds) {
     if (totalSeconds === null || totalSeconds === undefined) return "—";
     var s = Math.max(0, Math.round(totalSeconds));
-    var m = Math.floor(s / 60);
+    var h = Math.floor(s / 3600);
+    var m = Math.floor((s % 3600) / 60);
     var sec = s % 60;
-    return m + ":" + String(sec).padStart(2, "0");
+    return h > 0
+      ? h + ":" + String(m).padStart(2, "0") + ":" + String(sec).padStart(2, "0")
+      : m + ":" + String(sec).padStart(2, "0");
   }
 
   function tyreClass(visual) {
@@ -357,43 +372,85 @@ const SCRIPT = `
     return ((f % 1) + 1) % 1;
   }
 
+  // Exactly one zone per track straddles the start/finish line, so its end
+  // fraction sits *below* its start (Monza: 0.995 -> 0.078). Both helpers unroll
+  // that zone onto a 0..2 line; testing "f >= start && f < end" directly would
+  // never match it and leave every car pinned to one point for that whole span —
+  // 8% of a Monza lap, 14% of a Catalunya one. The zone's path is two subpaths
+  // joined at the line and getPointAtLength walks them continuously, so t maps
+  // straight through.
+  function zoneSpan(zone) {
+    return zone.end > zone.start ? zone.end - zone.start : zone.end + 1 - zone.start;
+  }
+
+  function zoneOffset(zone, f) {
+    return f >= zone.start ? f - zone.start : f + 1 - zone.start;
+  }
+
   function pointAtFraction(zones, f) {
     if (!zones.length) return null;
     var zone = null;
     for (var i = 0; i < zones.length; i++) {
-      if (f >= zones[i].start && f < zones[i].end) { zone = zones[i]; break; }
+      if (zoneOffset(zones[i], f) < zoneSpan(zones[i])) { zone = zones[i]; break; }
     }
-    if (!zone) zone = f < zones[0].start ? zones[0] : zones[zones.length - 1];
-    var span = (zone.end - zone.start) || 1;
-    var t = Math.min(1, Math.max(0, (f - zone.start) / span));
+    // Zone coverage is gapless by construction; park the car on the last zone
+    // rather than dropping it off the map if a track's data ever isn't.
+    if (!zone) zone = zones[zones.length - 1];
+    var t = Math.min(1, Math.max(0, zoneOffset(zone, f) / (zoneSpan(zone) || 1)));
     return zone.el.getPointAtLength(t * zone.len);
   }
 
+  // Only a successful fetch stays in the cache. Caching the failure — which a
+  // rejected promise sitting in svgCache amounts to — would disable this
+  // circuit's map for the lifetime of the page over one dropped request, and
+  // the rejection would take renderDots down with it on every later poll.
   function loadTrackSvg(slug) {
     if (svgCache[slug]) return svgCache[slug];
     var p = fetch("/images/track-layouts/" + slug + ".svg")
-      .then(function (r) { return r.ok ? r.text() : null; });
+      .then(function (r) { return r.ok ? r.text() : null; })
+      .catch(function () { return null; })
+      .then(function (svgText) {
+        if (!svgText) delete svgCache[slug];
+        return svgText;
+      });
     svgCache[slug] = p;
     return p;
   }
 
   var mapState = { slug: null, zones: null };
 
+  // Idempotent: the dashboard re-enters ensureTrackMap on every 3s poll, and
+  // rewriting identical markup each time would restart the message's layout.
+  function showNoMap(container) {
+    if (!container.querySelector(".no-map")) {
+      container.innerHTML = '<div class="no-map">Track map unavailable for this circuit.</div>';
+    }
+    mapState = { slug: null, zones: null };
+  }
+
   function ensureTrackMap(container, track) {
     var slug = track ? TRACK_SLUGS[track.name] : null;
     if (!slug) {
-      container.innerHTML = '<div class="no-map">Track map unavailable for this circuit.</div>';
-      mapState = { slug: null, zones: null };
+      showNoMap(container);
       return Promise.resolve();
     }
-    if (mapState.slug === slug) return Promise.resolve();
+    // Checking the DOM, not just the cached slug: render() rebuilds the whole
+    // shell whenever session_uid changes, which hands us a fresh empty #map. On
+    // the usual Practice -> Quali -> Race progression the slug is unchanged, so
+    // a slug-only guard would skip the re-injection and leave the map blank for
+    // every session after the first.
+    if (mapState.slug === slug && container.querySelector("svg.layout")) return Promise.resolve();
     return loadTrackSvg(slug).then(function (svgText) {
       if (!svgText) {
-        container.innerHTML = '<div class="no-map">Track map unavailable for this circuit.</div>';
-        mapState = { slug: null, zones: null };
+        showNoMap(container);
         return;
       }
-      container.innerHTML = svgText.replace("<svg ", '<svg class="layout" ');
+      // Drop the SVG's own <style> block — inline in an HTML document its rules
+      // are global, not scoped to the SVG. The equivalents live in this page's
+      // stylesheet under .track-map-wrap.
+      container.innerHTML = svgText
+        .replace(/<style>[\\s\\S]*?<\\/style>/, "")
+        .replace("<svg ", '<svg class="layout" ');
       var svg = container.querySelector("svg.layout");
       var paths = Array.prototype.slice.call(svg.querySelectorAll("path.zone"));
       var zones = paths.map(function (el) {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatLapTime, parseMs, parsePgArray } from "../src/schema";
+import { formatLapTime, parseMs, parsePgArray, parsePgNumberArray } from "../src/schema";
 
 describe("parseMs", () => {
   it("decodes the string postgres.js returns for BIGINT", () => {
@@ -55,5 +55,28 @@ describe("parsePgArray", () => {
 
   it("unescapes a backslash-escaped quote inside a quoted element", () => {
     expect(parsePgArray('{"a\\"b"}')).toEqual(['a"b']);
+  });
+});
+
+describe("parsePgNumberArray", () => {
+  it("decodes a smallint array literal into numbers, not strings", () => {
+    expect(parsePgNumberArray("{16,18}")).toEqual([16, 18]);
+  });
+
+  it("decodes an empty array literal as an empty array, not null", () => {
+    expect(parsePgNumberArray("{}")).toEqual([]);
+  });
+
+  it("passes an already-parsed array through unchanged", () => {
+    expect(parsePgNumberArray([16, 18])).toEqual([16, 18]);
+  });
+
+  it("keeps null distinct from an empty array", () => {
+    expect(parsePgNumberArray(null)).toBeNull();
+    expect(parsePgNumberArray(undefined)).toBeNull();
+  });
+
+  it("handles a negative element", () => {
+    expect(parsePgNumberArray("{-1,0}")).toEqual([-1, 0]);
   });
 });

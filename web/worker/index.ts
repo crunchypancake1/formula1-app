@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { checkSchema, connect, parsePgArray, schemaMarkerColumns, type Env } from "@f1/db";
+import { checkSchema, connect, schemaMarkerColumns, type Env } from "@f1/db";
 import { renderDashboard } from "./dashboard";
 import { buildFeed, fastestLapEvents, penaltyEvents, raceControlEvents, retirementEvents } from "./queries/feed";
 import { liveDrivers } from "./queries/live";
@@ -47,7 +47,7 @@ app.get("/api/live", async (c) => {
       live: true,
       session,
       track,
-      timeline: { ...timeline, marshal_zone_flags: parsePgArray(timeline.marshal_zone_flags) },
+      timeline,
       drivers,
       currentLap,
       feed: buildFeed(raceControl, penalties, retirements, fastestLaps),

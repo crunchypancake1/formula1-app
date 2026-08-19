@@ -12,6 +12,7 @@ F1 26 UDP telemetry capture, a live session dashboard, and a Discord bot.
 | Database schema | Local Docker (TimescaleDB / Postgres 16) | `schema/` | SQL |
 | Live dashboard | Cloudflare Workers | `web/` | TypeScript (Hono) |
 | Discord bot | Cloudflare Workers | `bot/` | TypeScript (Hono) |
+| Shared DB layer | npm workspace (`@f1/db`) | `packages/db/` | TypeScript |
 
 The listener captures UDP telemetry from the game and writes it to a local
 PostgreSQL/TimescaleDB instance. Both Workers read that same database through
@@ -54,9 +55,10 @@ the withheld-data paths are covered end to end. `tests/factories.py` builds the
 real packet dataclasses for service tests — use it rather than hand-rolled
 `SimpleNamespace` stand-ins, which silently drift from the parsers.
 
-### Web dashboard / Discord bot (TypeScript, `web/` and `bot/`)
+### Web dashboard / Discord bot (TypeScript, `web/`, `bot/`, `packages/db/`)
 
-Same scripts in both:
+npm workspaces — run `npm install` at the repo root. Same scripts in all
+three packages (`packages/db` has no dev/deploy):
 
 ```bash
 npm run dev         # wrangler dev
@@ -168,10 +170,17 @@ otherwise fail the FK and take the whole session's roster with it.
 
 ### Web / bot Workers
 
-Both are thin Hono apps. `db.ts` in each connects via the `HYPERDRIVE`
-binding (`postgres` npm package, `fetch_types: false` since Hyperdrive can't
-cache the type-introspection query). Hyperdrive caching itself is disabled
-project-wide (see `DEPLOYMENT.md`) because the live view needs fresh car
-positions on every poll, not cached rows. Both currently only expose a
-`/health`-style endpoint — the actual dashboard/bot functionality has not
-been built yet.
+Both are thin Hono apps sharing `packages/db` (`@f1/db`): connection setup,
+typed row models for every telemetry table, enum types mirroring
+`listener/enums/`, and the schema health probe. `connect()` uses the
+`HYPERDRIVE` binding (`postgres` npm package, `fetch_types: false` since
+Hyperdrive can't cache the type-introspection query — the consequence is
+BIGINT columns arrive as strings; use `parseMs`). Hyperdrive caching itself
+is disabled project-wide (see `DEPLOYMENT.md`) because the live view needs
+fresh car positions on every poll, not cached rows.
+
+Each Worker keeps its SQL in `queries/` (web: sessions, entries, timeline;
+bot: sessions, entries, drivers, laps, results). The query layers are tested
+and typed against the F1 26 schema, but the only routes wired up so far are
+the health endpoints (`/api/health` on web, `/health` on bot) — the dashboard
+UI and bot commands are the current work in progress.

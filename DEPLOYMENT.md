@@ -50,8 +50,33 @@ Two services: `postgres` (TimescaleDB, published on host port 7005) and
 `listener` (applies `schema/run_schema.py` on startup, then captures UDP on
 port 9999).
 
+### Resetting the database
+
+There is no migration path (pre-1.0 schema churn is handled by recreation,
+not `ALTER TABLE`). To wipe and rebuild with the current schema:
+
+```bash
+docker compose down -v      # drops the postgres_data volume
+docker compose up -d --build
+```
+
+The init script recreates `f1_app` with the TimescaleDB extension and the
+`identity`/`telemetry` schemas; the listener applies `schema/*.sql` on
+startup. Hyperdrive holds no schema state (query caching is disabled and
+`fetch_types` is off), so nothing on the Cloudflare side needs recreating.
+
 ## Workers
 
-Both Workers deploy from `master` via Workers Builds, one build connection
-each, scoped by root directory. See the per-Worker sections below once they
-exist.
+| Worker | Route | Health check |
+|---|---|---|
+| `formula1-web` | `f1.crunchypancake.com` | `GET /api/health` |
+| `formula1-bot` | `f1-bot.crunchypancake.com` | `GET /health` |
+
+Both deploy from `master` via Workers Builds, one build connection each,
+scoped by root directory — a push to `master` redeploys them. Manual deploys
+work too: `npm run deploy` in `web/` or `bot/`.
+
+The health endpoints verify connectivity end to end (Worker → Hyperdrive →
+tunnel → Postgres) and probe for F1 26 marker columns
+(`packages/db/src/health.ts`), so they return 503 with the missing markers
+listed if the database schema is stale.

@@ -1,7 +1,7 @@
 import { SignJWT, jwtVerify, importPKCS8, exportJWK, importJWK, type JWK } from "jose";
 import type { AuthEnv } from "./env";
 
-const ALG = "RS256";
+const ALG = "ES256";
 const KID = "1";
 
 export interface AuthClaims {
@@ -32,12 +32,13 @@ async function getKeys(env: AuthEnv): Promise<Keys> {
       // extractable: true — exportJWK() below needs to pull the public components back out.
       const privateKey = await importPKCS8(pem, ALG, { extractable: true });
       const fullJwk = await exportJWK(privateKey);
-      // Explicit allowlist, not spread-and-delete: an RSA JWK exported from a private
-      // CryptoKey carries d/p/q/dp/dq/qi, and those must never reach getJwks()'s output.
+      // Explicit allowlist, not spread-and-delete: an EC JWK exported from a private
+      // CryptoKey carries d, and that must never reach getJwks()'s output.
       const publicJwk: JWK = {
         kty: fullJwk.kty,
-        n: fullJwk.n,
-        e: fullJwk.e,
+        crv: fullJwk.crv,
+        x: fullJwk.x,
+        y: fullJwk.y,
         alg: ALG,
         use: "sig",
         kid: KID,

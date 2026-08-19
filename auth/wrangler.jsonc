@@ -9,10 +9,10 @@
   "preview_urls": false,
 
   "vars": {
-    "DISCORD_GUILD_ID": "",
-    "DISCORD_OAUTH_CLIENT_ID": "",
-    "ACCESS_CLIENT_ID": "",
-    "ACCESS_TEAM_DOMAIN": "",
+    "DISCORD_GUILD_ID": "1301861026844643409",
+    "DISCORD_OAUTH_CLIENT_ID": "1277757746460233818",
+    "ACCESS_CLIENT_ID": "836727f24aa515f8df5981dabb1bd0801ce00970e75625ae2334c16296a21ae5",
+    "ACCESS_TEAM_DOMAIN": "crunchypancake.cloudflareaccess.com",
     "OIDC_ISSUER": "https://f1.crunchypancake.com/auth"
   },
 

@@ -287,7 +287,7 @@ class TestClassificationMarksSession:
 class TestInvalidHeaderRejected:
     def test_invalid_header_rejected(self):
         dispatcher, _, entries_repo, *_ = _make_dispatcher()
-        # Build a header with packet_format=2024 (invalid — expects 2025)
+        # Build a header with packet_format=2024 (invalid — expects 2026)
         import struct
         bad_header = struct.pack(
             '<HBBBBBQfIIBB',

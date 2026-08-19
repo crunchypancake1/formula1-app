@@ -1,39 +1,64 @@
 import { Hono } from "hono";
-import { checkSchema, connect, schemaMarkerColumns, type Env } from "@f1/db";
+import { checkSchema, connect, parsePgArray, schemaMarkerColumns, type Env } from "@f1/db";
+import { renderDashboard } from "./dashboard";
+import { buildFeed, fastestLapEvents, penaltyEvents, raceControlEvents, retirementEvents } from "./queries/feed";
+import { liveDrivers } from "./queries/live";
 import { latestSession } from "./queries/sessions";
+import { latestTimeline } from "./queries/timeline";
+import { trackById } from "./queries/tracks";
 
 const app = new Hono<{ Bindings: Env }>();
 
-app.get("/", (c) =>
-  c.html(`<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>F1 Live Dashboard</title>
-<style>
-  body { font-family: system-ui, sans-serif; background: #111; color: #eee; display: grid; place-items: center; min-height: 100vh; margin: 0; }
-  main { text-align: center; }
-  code { background: #222; padding: 0.15em 0.4em; border-radius: 4px; }
-  a { color: #e10600; }
-</style>
-</head>
-<body>
-<main>
-  <h1>F1 Live Dashboard</h1>
-  <p id="status">Checking backend&hellip;</p>
-  <p>The live session view is under construction. API health: <a href="/api/health"><code>/api/health</code></a></p>
-</main>
-<script>
-  fetch("/api/health").then(r => r.json()).then(h => {
-    document.getElementById("status").textContent = h.ok
-      ? (h.latestSession ? "Backend online — latest session " + h.latestSession : "Backend online — no sessions recorded yet")
-      : "Backend unavailable";
-  }).catch(() => { document.getElementById("status").textContent = "Backend unavailable"; });
-</script>
-</body>
-</html>`)
-);
+/**
+ * A session counts as "live" only while its timeline is still being written —
+ * an old finished session must not linger on the dashboard looking active.
+ * The listener samples session_timeline at packet rate (every frame), so a
+ * gap this long only happens once the session has actually ended.
+ */
+const LIVE_THRESHOLD_MS = 60_000;
+
+app.get("/", (c) => c.html(renderDashboard()));
+
+app.get("/api/live", async (c) => {
+  const sql = connect(c.env);
+  try {
+    const session = await latestSession(sql);
+    if (!session) return c.json({ live: false });
+
+    const timeline = await latestTimeline(sql, session.session_uid);
+    const live = timeline !== null && Date.now() - timeline.timestamp.getTime() <= LIVE_THRESHOLD_MS;
+    if (!live) return c.json({ live: false });
+
+    const [track, drivers, raceControl, penalties, retirements, fastestLaps] = await Promise.all([
+      trackById(sql, session.track_id),
+      liveDrivers(sql, session.session_uid),
+      raceControlEvents(sql, session.session_uid),
+      penaltyEvents(sql, session.session_uid),
+      retirementEvents(sql, session.session_uid),
+      fastestLapEvents(sql, session.session_uid),
+    ]);
+
+    const currentLap = drivers.reduce<number | null>((max, d) => {
+      if (d.current_lap_num == null) return max;
+      return max === null ? d.current_lap_num : Math.max(max, d.current_lap_num);
+    }, null);
+
+    return c.json({
+      live: true,
+      session,
+      track,
+      timeline: { ...timeline, marshal_zone_flags: parsePgArray(timeline.marshal_zone_flags) },
+      drivers,
+      currentLap,
+      feed: buildFeed(raceControl, penalties, retirements, fastestLaps),
+    });
+  } catch (e) {
+    console.error(e);
+    return c.json({ live: false, error: e instanceof Error ? e.message : String(e) }, 503);
+  } finally {
+    c.executionCtx.waitUntil(sql.end());
+  }
+});
 
 app.get("/api/health", async (c) => {
   const sql = connect(c.env);

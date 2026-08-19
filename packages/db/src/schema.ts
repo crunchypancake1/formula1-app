@@ -350,6 +350,105 @@ export interface LapPositionsRow {
 }
 
 // ---------------------------------------------------------------------------
+// telemetry — live dashboard
+// ---------------------------------------------------------------------------
+
+/**
+ * The latest telemetry.car_frame row for every driver in a session, joined to
+ * roster/driver identity plus each driver's personal-best lap (session_bests
+ * joined to laps). One row per car — this is what the live dashboard's
+ * leaderboard and track map are built from.
+ */
+export interface LiveDriverRow {
+  user_id: number;
+  car_index: number;
+  driver_name: string;
+  team_name: string;
+  team_display_name: string;
+  race_number: number;
+
+  position: number | null;
+  current_lap_num: number | null;
+  sector: string | null;
+  lap_distance: number | null;
+  total_distance: number | null;
+
+  /** BIGINT — string, or null before a lap/the current lap has a time. */
+  last_lap_time_ms: string | null;
+  current_lap_time_ms: string | null;
+  sector1_time_ms: number | null;
+  sector2_time_ms: number | null;
+
+  gap_to_leader_ms: number | null;
+  gap_to_car_ahead_ms: number | null;
+
+  pit_status: string | null;
+  driver_status: string | null;
+  result_status: string | null;
+  current_lap_invalid: boolean | null;
+
+  actual_tyre_compound: string | null;
+  visual_tyre_compound: string | null;
+  tyres_age_laps: number | null;
+
+  num_pit_stops: number | null;
+  penalties_seconds: number | null;
+  total_warnings: number | null;
+  speed: number | null;
+
+  /** The 2026 Boost — replaced fixed DRS zones with an on-demand overtaking aid. */
+  overtake_active: boolean | null;
+
+  /** This driver's personal-best lap this session. BIGINT — string, or null if none yet. */
+  best_lap_time_ms: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// telemetry — race control feed sources
+// ---------------------------------------------------------------------------
+
+/** telemetry.events_race_control — session-level flags, safety car, DRS, lights. */
+export interface RaceControlEventRow {
+  overall_frame_identifier: number;
+  session_time: number;
+  event_code: string;
+  safety_car_type: string | null;
+  safety_car_event_type: string | null;
+  num_lights: number | null;
+  drs_disabled_reason: string | null;
+}
+
+/** telemetry.events_penalties joined to the driver(s) involved. */
+export interface PenaltyEventRow {
+  overall_frame_identifier: number;
+  session_time: number;
+  driver_name: string;
+  other_driver_name: string | null;
+  penalty_type: string;
+  infringement_type: string;
+  time_seconds: number | null;
+  lap_num: number | null;
+  places_gained: number | null;
+}
+
+/** telemetry.events_retirements joined to the driver. */
+export interface RetirementEventRow {
+  overall_frame_identifier: number;
+  session_time: number;
+  driver_name: string;
+  reason: string;
+}
+
+/** telemetry.events_fastest_laps joined to the driver. */
+export interface FastestLapEventRow {
+  overall_frame_identifier: number;
+  session_time: number;
+  driver_name: string;
+  /** Seconds, per the Event packet — unlike every *_ms column elsewhere. */
+  lap_time: number;
+}
+
+// ---------------------------------------------------------------------------
 // Value helpers
 // ---------------------------------------------------------------------------
 
@@ -362,6 +461,50 @@ export function parseMs(value: string | number | null | undefined): number | nul
   if (value === null || value === undefined) return null;
   const ms = typeof value === "number" ? value : Number(value);
   return Number.isFinite(ms) ? ms : null;
+}
+
+/**
+ * Decode an array column (`marshal_zone_flags`, `livery_colors`,
+ * `tyre_stints_actual`, `weekend_structure`, ...). The same `fetch_types: false`
+ * that leaves BIGINT as a string (see `parseMs`) also stops postgres.js from
+ * inflating *any* array type into a JS array — every array column comes back as
+ * its raw Postgres literal (`{a,b,c}`, `{}` for empty, quoted elements as
+ * `{"a,b",c}`) instead. Passing an already-parsed array through unchanged
+ * makes this safe to apply defensively without knowing the caller's fetch_types.
+ */
+export function parsePgArray(value: string | string[] | null | undefined): string[] | null {
+  if (value === null || value === undefined) return null;
+  if (Array.isArray(value)) return value;
+
+  const inner = value.slice(1, -1);
+  if (inner === "") return [];
+
+  const elements: string[] = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < inner.length; i++) {
+    const ch = inner[i];
+    if (inQuotes) {
+      if (ch === "\\") {
+        current += inner[++i];
+      } else if (ch === '"') {
+        inQuotes = false;
+      } else {
+        current += ch;
+      }
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === ",") {
+      elements.push(current);
+      current = "";
+    } else {
+      current += ch;
+    }
+  }
+  elements.push(current);
+
+  return elements;
 }
 
 /**

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatLapTime, parseMs } from "../src/schema";
+import { formatLapTime, parseMs, parsePgArray } from "../src/schema";
 
 describe("parseMs", () => {
   it("decodes the string postgres.js returns for BIGINT", () => {
@@ -28,5 +28,32 @@ describe("formatLapTime", () => {
 
   it("renders a withheld time as a dash, not 0:00.000", () => {
     expect(formatLapTime(null)).toBe("—");
+  });
+});
+
+describe("parsePgArray", () => {
+  it("decodes the raw Postgres literal fetch_types:false leaves array columns as", () => {
+    expect(parsePgArray("{YELLOW,GREEN}")).toEqual(["YELLOW", "GREEN"]);
+  });
+
+  it("decodes an empty array literal as an empty array, not null", () => {
+    expect(parsePgArray("{}")).toEqual([]);
+  });
+
+  it("passes an already-parsed array through unchanged", () => {
+    expect(parsePgArray(["YELLOW"])).toEqual(["YELLOW"]);
+  });
+
+  it("keeps null distinct from an empty array", () => {
+    expect(parsePgArray(null)).toBeNull();
+    expect(parsePgArray(undefined)).toBeNull();
+  });
+
+  it("unescapes a quoted element containing a comma", () => {
+    expect(parsePgArray('{"a,b",c}')).toEqual(["a,b", "c"]);
+  });
+
+  it("unescapes a backslash-escaped quote inside a quoted element", () => {
+    expect(parsePgArray('{"a\\"b"}')).toEqual(['a"b']);
   });
 });

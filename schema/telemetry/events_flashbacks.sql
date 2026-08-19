@@ -6,7 +6,7 @@
 -- undone. The listener deletes frame rows above flashback_session_time when it
 -- sees the event; this table keeps the audit trail of what was rewound.
 CREATE TABLE IF NOT EXISTS telemetry.events_flashbacks (
-    session_uid                 VARCHAR(255) NOT NULL REFERENCES telemetry.sessions(session_uid) ON DELETE CASCADE,
+    session_uid                 VARCHAR(20) NOT NULL REFERENCES telemetry.sessions(session_uid) ON DELETE CASCADE,
     overall_frame_identifier    INTEGER NOT NULL,
     session_time                FLOAT NOT NULL,
     flashback_frame_identifier  BIGINT NOT NULL,
@@ -16,4 +16,4 @@ CREATE TABLE IF NOT EXISTS telemetry.events_flashbacks (
     PRIMARY KEY (session_uid, overall_frame_identifier)
 );
 
-CREATE INDEX IF NOT EXISTS idx_events_flashbacks_session ON telemetry.events_flashbacks(session_uid);
+-- No secondary index: session_uid is a prefix of the primary key.

@@ -5,6 +5,7 @@ import logging
 import os
 import sys
 from pathlib import Path
+from urllib.parse import quote_plus
 
 import psycopg
 
@@ -59,7 +60,10 @@ def get_database_url() -> str:
     user = os.environ.get("POSTGRES_USER", "postgres")
     password = os.environ.get("POSTGRES_PASSWORD", "postgres")
     db = os.environ.get("POSTGRES_DB", "f1_app")
-    return f"postgresql://{user}:{password}@{host}:{port}/{db}"
+    # Percent-encode the credentials, as listener/config.py does: a password
+    # containing @ : / or # is otherwise parsed as URI structure and the
+    # connection fails somewhere unhelpful.
+    return f"postgresql://{quote_plus(user)}:{quote_plus(password)}@{host}:{port}/{db}"
 
 
 def run_schema() -> None:
@@ -85,8 +89,17 @@ def run_schema() -> None:
                         cur.execute(sql)
                     conn.commit()
                 except (psycopg.errors.DuplicateTable, psycopg.errors.DuplicateObject):
+                    # Rollback discards the whole file, not just the duplicate
+                    # statement — anything declared after it (a newly added
+                    # index, a compression policy) silently does not run. Every
+                    # statement here uses IF NOT EXISTS, so reaching this means
+                    # one of them does not, and it is worth seeing.
                     conn.rollback()
-                    logger.info("  (already exists, skipped)")
+                    logger.warning(
+                        "  %s/%s: object already exists — rest of file skipped",
+                        schema_name,
+                        filename,
+                    )
                 except Exception:
                     conn.rollback()
                     logger.exception("  failed: %s/%s", schema_name, filename)

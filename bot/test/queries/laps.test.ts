@@ -6,7 +6,7 @@ import { fastestLap, sessionBest, tyreStint } from "../fixtures";
 describe("readFastestValidLap", () => {
   it("returns the first row — the query orders by lap_time_ms", async () => {
     const lap = await readFastestValidLap(async () => [
-      fastestLap({ driver_name: "Driver One", lap_time_ms: "83456" }),
+      fastestLap({ driver_name: "Driver One", lap_time_ms: 83456 }),
     ]);
 
     expect(lap?.driver_name).toBe("Driver One");

@@ -1,7 +1,7 @@
 -- Driver action events (simple single-driver events)
 -- Covers: RCWN, TMPT, DTSV, SGSV
 CREATE TABLE IF NOT EXISTS telemetry.events_driver_actions (
-    session_uid                 VARCHAR(255) NOT NULL REFERENCES telemetry.sessions(session_uid) ON DELETE CASCADE,
+    session_uid                 VARCHAR(20) NOT NULL REFERENCES telemetry.sessions(session_uid) ON DELETE CASCADE,
     overall_frame_identifier    INTEGER NOT NULL,
     event_code                  VARCHAR(10) NOT NULL,
     session_time                FLOAT NOT NULL,
@@ -11,5 +11,7 @@ CREATE TABLE IF NOT EXISTS telemetry.events_driver_actions (
     PRIMARY KEY (session_uid, overall_frame_identifier, event_code, user_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_events_driver_actions_session ON telemetry.events_driver_actions(session_uid);
-CREATE INDEX IF NOT EXISTS idx_events_driver_actions_code ON telemetry.events_driver_actions(event_code);
+-- No secondary indexes. session_uid is a prefix of the primary key, and a bare
+-- event_code index would cover four distinct values across the whole table —
+-- far too unselective for the planner to prefer over a scan, and nothing
+-- queries by code without also naming a session.

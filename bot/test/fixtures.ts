@@ -58,7 +58,7 @@ export function raceResult(
     num_pit_stops: 1,
     result_status: "FINISHED",
     result_reason: "FINISHED",
-    best_lap_time_ms: "83456",
+    best_lap_time_ms: 83456,
     game_points: 25,
     total_race_time: 5400.5,
     penalties_time: 0,
@@ -100,7 +100,7 @@ export function fastestLap(overrides: Partial<FastestLap> = {}): FastestLap {
     user_id: 1,
     driver_name: "Driver One",
     lap_number: 12,
-    lap_time_ms: "83456",
+    lap_time_ms: 83456,
     ...overrides,
   };
 }
@@ -110,7 +110,7 @@ export function sessionBest(overrides: Partial<SessionBest> = {}): SessionBest {
     user_id: 1,
     driver_name: "Driver One",
     best_lap_num: 12,
-    best_lap_time_ms: "83456",
+    best_lap_time_ms: 83456,
     best_sector1_lap_num: 12,
     best_sector1_time_ms: 28000,
     best_sector2_lap_num: 9,

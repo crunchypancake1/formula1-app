@@ -1,9 +1,9 @@
 -- Laps table (source: Session History packet, Packet 11)
 CREATE TABLE IF NOT EXISTS telemetry.laps (
-    session_uid VARCHAR(255) NOT NULL REFERENCES telemetry.sessions(session_uid) ON DELETE CASCADE,
+    session_uid VARCHAR(20) NOT NULL REFERENCES telemetry.sessions(session_uid) ON DELETE CASCADE,
     user_id INTEGER NOT NULL REFERENCES identity.users(id),
     lap_number SMALLINT NOT NULL,
-    lap_time_ms BIGINT,
+    lap_time_ms INTEGER,
     sector1_time_ms INTEGER,
     sector2_time_ms INTEGER,
     sector3_time_ms INTEGER,
@@ -17,11 +17,10 @@ CREATE TABLE IF NOT EXISTS telemetry.laps (
     CONSTRAINT ck_laps_lap_time_valid CHECK (lap_time_ms IS NULL OR lap_time_ms >= 0)
 );
 
-CREATE INDEX IF NOT EXISTS idx_laps_session_driver ON telemetry.laps(session_uid, user_id);
-CREATE INDEX IF NOT EXISTS idx_laps_session_valid ON telemetry.laps(session_uid, is_valid);
-CREATE INDEX IF NOT EXISTS idx_laps_valid_time ON telemetry.laps(session_uid, is_valid, lap_time_ms);
-
--- Partial index for fastest valid lap queries
+-- The primary key (session_uid, user_id, lap_number) already serves every
+-- per-session and per-driver lookup, including the four joins sessionBests
+-- makes back into this table. The only query it does not serve is "fastest
+-- valid lap in this session", which gets the partial index below.
 CREATE INDEX IF NOT EXISTS idx_laps_fastest_valid
 ON telemetry.laps(session_uid, lap_time_ms)
 WHERE is_valid = true AND lap_time_ms IS NOT NULL;

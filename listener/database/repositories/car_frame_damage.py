@@ -1,6 +1,7 @@
 """Repository for car_frame_damage (Packet 10 — Car Damage)."""
 
 import logging
+from datetime import datetime
 from typing import Optional
 
 from database.client import PostgresClient
@@ -44,10 +45,13 @@ class CarFrameDamageRepository(RepositoryBase):
             return
         self._execute_many(self._SQL, rows, table_name=self.TABLE_NAME)
 
-    def delete_after(self, session_uid: str, session_time: float) -> int:
+    def delete_after(
+        self,
+        session_uid: str,
+        session_time: float,
+        session_start: Optional[datetime] = None,
+    ) -> int:
         """Discard rows recorded after a flashback's rewind point."""
-        return self._execute(
-            "DELETE FROM telemetry.car_frame_damage WHERE session_uid = %s AND session_time > %s",
-            (session_uid, session_time),
-            table_name=self.TABLE_NAME,
+        return self._delete_frames_after(
+            self.TABLE_NAME, session_uid, session_time, session_start
         )

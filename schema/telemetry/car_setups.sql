@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS telemetry.car_setups (
     setup_hash      BYTEA NOT NULL,
     track_id        SMALLINT NOT NULL,
     user_id         INTEGER,
-    session_uid     VARCHAR(255),
+    session_uid     VARCHAR(20),
     first_seen_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
     -- Aerodynamics

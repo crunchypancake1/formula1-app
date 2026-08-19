@@ -24,9 +24,9 @@ describe("readRaceClassification", () => {
     expect(row.game_points).not.toBe(0);
   });
 
-  it("decodes best_lap_time_ms, which arrives as a BIGINT string", async () => {
+  it("formats best_lap_time_ms, an INTEGER column so it arrives as a number", async () => {
     const [row] = await readRaceClassification(async () => [
-      raceResult({ best_lap_time_ms: "83456" }),
+      raceResult({ best_lap_time_ms: 83456 }),
     ]);
 
     expect(parseMs(row.best_lap_time_ms)).toBe(83456);

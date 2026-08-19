@@ -4,7 +4,7 @@
 -- changes. forecast_session_type is the session each sample predicts for — a
 -- practice session carries forecast samples for qualifying and the race too.
 CREATE TABLE IF NOT EXISTS telemetry.weather_forecast (
-    session_uid VARCHAR(255) NOT NULL REFERENCES telemetry.sessions(session_uid) ON DELETE CASCADE,
+    session_uid VARCHAR(20) NOT NULL REFERENCES telemetry.sessions(session_uid) ON DELETE CASCADE,
     forecast_index SMALLINT NOT NULL,
     forecast_session_type VARCHAR(50) NOT NULL,
     time_offset_minutes SMALLINT NOT NULL,
@@ -21,7 +21,8 @@ CREATE TABLE IF NOT EXISTS telemetry.weather_forecast (
     CONSTRAINT ck_weather_forecast_index_valid CHECK (forecast_index >= 0 AND forecast_index <= 63)
 );
 
-CREATE INDEX IF NOT EXISTS idx_weather_forecast_session ON telemetry.weather_forecast(session_uid);
+-- No secondary index: the primary key (session_uid, forecast_index) leads with
+-- session_uid and the whole forecast is always read as one ordered block.
 
 COMMENT ON COLUMN telemetry.weather_forecast.time_offset_minutes IS 'Minutes from session start when this weather is predicted';
 COMMENT ON COLUMN telemetry.weather_forecast.overall_frame_identifier IS 'Overall frame identifier when this forecast was last updated';

@@ -1,22 +1,24 @@
-"""Combines the same-tick packets (Motion, Lap Data, Telemetry, Status, Damage, Telemetry 2) into car_frame rows."""
+"""Combines the same-tick packets (Motion, Lap Data, Telemetry, Status, Damage, Telemetry 2) into car_frame rows.
+
+Enum-valued columns are written as the game's raw integer rather than a name
+resolved through `safe_enum_name`. At this table's row count eleven text columns
+cost roughly 88 bytes a row against 22 as SMALLINT, and resolution is the query
+layer's job — `@f1/db` (packages/db/src/enums.ts) maps a code to its name and
+degrades an unrecognised one to `UNKNOWN_<n>`, which is the same contract this
+module used to apply on write. Storing the integer is also what keeps that
+contract intact: a member added by a game patch is still a perfectly storable
+integer, where a native PostgreSQL enum would reject it and fail the write.
+
+Every other enum-valued table in the schema is low-volume and keeps its resolved
+names, which stay directly readable in ad-hoc SQL.
+"""
 
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import AbstractSet, Optional
 
 from database.repositories import CarFrameDamageRepository, CarFrameRepository
-from database.repositories.base import safe_enum_name
 from database.repositories.car_frame import COLUMN_INDEX
-from enums import (
-    ActualTyreCompound,
-    DriverStatus,
-    FlagStatus,
-    PitStatus,
-    ResultStatus,
-    Sector,
-    SurfaceType,
-    VisualTyreCompound,
-)
 from packets.constants import MAX_CARS
 
 # Sentinel used by the game for "not set" on these uint8 fields.
@@ -59,7 +61,7 @@ def _build_motion_fields(motion) -> tuple:
     )
 
 
-def _build_telemetry_fields(telemetry, logger: logging.Logger) -> tuple:
+def _build_telemetry_fields(telemetry) -> tuple:
     """Telemetry is never restricted — every field here is populated for every car."""
     if telemetry is None:
         return (None,) * 31
@@ -80,7 +82,8 @@ def _build_telemetry_fields(telemetry, logger: logging.Logger) -> tuple:
         *telemetry.tyres_surface_temp,
         *telemetry.tyres_inner_temp,
         *telemetry.tyres_pressure,
-        *(safe_enum_name(SurfaceType, s, logger) for s in telemetry.surface_type),
+        # SurfaceType codes, stored raw — see the enum note at the top of this module.
+        *telemetry.surface_type,
     )
 
 
@@ -100,7 +103,7 @@ def _build_player_telemetry_fields(telemetry_packet, is_player: bool) -> tuple:
     )
 
 
-def _build_lap_fields(lap, logger: logging.Logger) -> tuple:
+def _build_lap_fields(lap) -> tuple:
     if lap is None:
         return (None,) * 30
     return (
@@ -114,10 +117,10 @@ def _build_lap_fields(lap, logger: logging.Logger) -> tuple:
         lap.car_position if lap.car_position != _NOT_SET else None,
         lap.grid_position if lap.grid_position else None,
         lap.current_lap_num,
-        safe_enum_name(Sector, lap.sector, logger),
-        safe_enum_name(PitStatus, lap.pit_status, logger),
-        safe_enum_name(DriverStatus, lap.driver_status, logger),
-        safe_enum_name(ResultStatus, lap.result_status, logger),
+        lap.sector,
+        lap.pit_status,
+        lap.driver_status,
+        lap.result_status,
         bool(lap.current_lap_invalid),
         _split_time_ms(lap.delta_to_race_leader_minutes_part, lap.delta_to_race_leader_ms_part),
         _split_time_ms(lap.delta_to_car_in_front_minutes_part, lap.delta_to_car_in_front_ms_part),
@@ -137,7 +140,7 @@ def _build_lap_fields(lap, logger: logging.Logger) -> tuple:
     )
 
 
-def _build_status_public_fields(status, logger: logging.Logger) -> tuple:
+def _build_status_public_fields(status) -> tuple:
     """The Car Status fields the game sends for every car regardless of privacy setting."""
     if status is None:
         return (None,) * 13
@@ -145,10 +148,10 @@ def _build_status_public_fields(status, logger: logging.Logger) -> tuple:
         bool(status.pit_limiter),
         bool(status.drs_allowed),
         status.drs_activation_distance,
-        safe_enum_name(ActualTyreCompound, status.actual_tyre_compound, logger),
-        safe_enum_name(VisualTyreCompound, status.visual_tyre_compound, logger),
+        status.actual_tyre_compound,
+        status.visual_tyre_compound,
         status.tyres_age_laps if status.tyres_age_laps != _NOT_SET else None,
-        safe_enum_name(FlagStatus, status.vehicle_fia_flags, logger),
+        status.vehicle_fia_flags,
         bool(status.network_paused),
         status.traction_control,
         bool(status.anti_lock_brakes),
@@ -317,10 +320,10 @@ class CarFrameService:
                 meta
                 + (user_id, session_time, overall_frame_identifier)
                 + _build_motion_fields(motion)
-                + _build_telemetry_fields(telemetry, self._logger)
+                + _build_telemetry_fields(telemetry)
                 + _build_player_telemetry_fields(telemetry_packet, car_index == player_car_index)
-                + _build_lap_fields(lap, self._logger)
-                + _build_status_public_fields(status, self._logger)
+                + _build_lap_fields(lap)
+                + _build_status_public_fields(status)
                 + _build_status_restricted_fields(status, is_restricted)
                 + _build_telemetry2_fields(telemetry2)
             )
@@ -350,16 +353,29 @@ class CarFrameService:
             except Exception as e:
                 self._logger.error(f"Failed to insert car frame damage batch: {e}", exc_info=True)
 
-    def discard_after(self, session_uid: str, session_time: float) -> int:
+    def discard_after(
+        self,
+        session_uid: str,
+        session_time: float,
+        session_start: Optional[datetime] = None,
+    ) -> int:
         """
         Delete frame rows recorded after a flashback's rewind point.
 
         Returns the number of car_frame rows removed; the damage and motion_ex
         rows for the same stretch go with them.
+
+        session_start is what lets the DELETE bound `timestamp` as well, so
+        TimescaleDB can exclude every chunk this session does not occupy —
+        without it a flashback scans the full history of both hypertables.
         """
-        discarded = self._car_frame_repo.delete_after(session_uid, session_time)
+        discarded = self._car_frame_repo.delete_after(
+            session_uid, session_time, session_start
+        )
         if self._car_frame_damage_repo is not None:
-            self._car_frame_damage_repo.delete_after(session_uid, session_time)
+            self._car_frame_damage_repo.delete_after(
+                session_uid, session_time, session_start
+            )
         return discarded
 
     @staticmethod

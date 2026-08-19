@@ -4,7 +4,7 @@
 -- itself; join back to telemetry.laps on (session_uid, user_id, lap_number)
 -- for the times. 0 means "no best set yet" and is stored as NULL.
 CREATE TABLE IF NOT EXISTS telemetry.session_bests (
-    session_uid         VARCHAR(255) NOT NULL REFERENCES telemetry.sessions(session_uid) ON DELETE CASCADE,
+    session_uid         VARCHAR(20) NOT NULL REFERENCES telemetry.sessions(session_uid) ON DELETE CASCADE,
     user_id             INTEGER NOT NULL REFERENCES identity.users(id),
     best_lap_num        SMALLINT,
     best_sector1_lap_num SMALLINT,
@@ -14,4 +14,5 @@ CREATE TABLE IF NOT EXISTS telemetry.session_bests (
     PRIMARY KEY (session_uid, user_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_session_bests_session ON telemetry.session_bests(session_uid);
+-- No secondary index: the primary key leads with session_uid, which is the
+-- only way this table is ever read.

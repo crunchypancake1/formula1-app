@@ -5,7 +5,7 @@
 -- wing the player has queued for their next pit stop. Player-only, so it is
 -- NULL for anyone else.
 CREATE TABLE IF NOT EXISTS telemetry.lap_setups (
-    session_uid     VARCHAR(255) NOT NULL REFERENCES telemetry.sessions(session_uid) ON DELETE CASCADE,
+    session_uid     VARCHAR(20) NOT NULL REFERENCES telemetry.sessions(session_uid) ON DELETE CASCADE,
     user_id         INTEGER NOT NULL REFERENCES identity.users(id),
     lap_number      SMALLINT NOT NULL,
     setup_id        INTEGER NOT NULL REFERENCES telemetry.car_setups(setup_id),

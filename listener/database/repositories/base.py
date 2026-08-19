@@ -3,6 +3,7 @@
 import dataclasses
 import json
 import logging
+from datetime import datetime, timedelta
 from typing import Any, Optional
 
 from database.client import PostgresClient
@@ -57,6 +58,41 @@ class RepositoryBase:
                 exc_info=True,
             )
             return 0
+
+    def _delete_frames_after(
+        self,
+        table: str,
+        session_uid: str,
+        session_time: float,
+        session_start: Optional[datetime] = None,
+    ) -> int:
+        """
+        Delete a frame hypertable's rows above a flashback's rewind point.
+
+        session_time is the authoritative predicate, but it is not the
+        partitioning column, so on its own it makes TimescaleDB open every chunk
+        in the table. When session_start is known, the identical bound on
+        `timestamp` goes in alongside it — frame rows are written at
+        session_start + session_time — and chunk exclusion narrows the DELETE to
+        the chunks this session occupies.
+        """
+        if session_start is not None:
+            return self._execute(
+                f"DELETE FROM {table} "
+                "WHERE session_uid = %s AND session_time > %s AND timestamp > %s",
+                (
+                    session_uid,
+                    session_time,
+                    session_start + timedelta(seconds=session_time),
+                ),
+                table_name=table,
+            )
+
+        return self._execute(
+            f"DELETE FROM {table} WHERE session_uid = %s AND session_time > %s",
+            (session_uid, session_time),
+            table_name=table,
+        )
 
     def _execute_many(self, sql: str, params_list: list, table_name: str = "unknown"):
         """

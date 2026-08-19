@@ -7,7 +7,8 @@
 
 CREATE TABLE IF NOT EXISTS telemetry.session_timeline (
     timestamp TIMESTAMPTZ NOT NULL,
-    session_uid VARCHAR(255) NOT NULL,
+    session_uid VARCHAR(20) NOT NULL
+                REFERENCES telemetry.sessions(session_uid) ON DELETE CASCADE,
     session_time FLOAT NOT NULL,
     overall_frame_identifier INTEGER NOT NULL,
     session_time_left FLOAT NOT NULL,
@@ -47,12 +48,18 @@ SELECT create_hypertable(
     if_not_exists => TRUE
 );
 
--- Index for per-session time-range queries
-CREATE INDEX IF NOT EXISTS idx_timeline_session_time
-ON telemetry.session_timeline(session_uid, timestamp);
-
--- Index for accurate frame-based ordering within a session
--- overall_frame_identifier is monotonically increasing and survives flashbacks
+-- Frame-based ordering within a session: overall_frame_identifier increases
+-- monotonically and survives flashbacks, so "the current state of session X"
+-- is a backward scan of this index. This is what the dashboard polls.
+--
+-- No (session_uid, timestamp) index alongside it: time-range reads are served
+-- by the primary key, which leads with timestamp, plus chunk exclusion — and a
+-- second index on a table taking a row per Session packet doubles its write
+-- cost for a query nothing makes yet.
+--
+-- Note that a query naming only session_uid cannot exclude chunks and so opens
+-- every chunk in the hypertable. Add a `timestamp >= session_start_utc` bound
+-- (the caller always has it) to keep these reads on the current chunk.
 CREATE INDEX IF NOT EXISTS idx_timeline_session_frame
 ON telemetry.session_timeline(session_uid, overall_frame_identifier);
 

@@ -1,5 +1,16 @@
 import { describe, it, expect } from "vitest";
-import { displayEnum, isKnownEnum, unknownEnumValue } from "../src/enums";
+import {
+  ACTUAL_TYRE_COMPOUND_CODES,
+  displayEnum,
+  DRIVER_STATUS_CODES,
+  enumFromCode,
+  FLAG_STATUS_CODES,
+  isKnownEnum,
+  PIT_STATUS_CODES,
+  SURFACE_TYPE_CODES,
+  unknownEnumValue,
+  VISUAL_TYRE_COMPOUND_CODES,
+} from "../src/enums";
 
 describe("isKnownEnum", () => {
   it("accepts a member name the listener resolved", () => {
@@ -37,5 +48,45 @@ describe("displayEnum", () => {
 
   it("renders an unrecognised value instead of leaking the sentinel", () => {
     expect(displayEnum("UNKNOWN_37")).toBe("Unknown (37)");
+  });
+});
+
+describe("enumFromCode", () => {
+  it("resolves a car_frame code to its member name", () => {
+    expect(enumFromCode(VISUAL_TYRE_COMPOUND_CODES, 16)).toBe("SOFT");
+    expect(enumFromCode(DRIVER_STATUS_CODES, 4)).toBe("ON_TRACK");
+    expect(enumFromCode(SURFACE_TYPE_CODES, 0)).toBe("TARMAC");
+  });
+
+  it("degrades an unrecognised code instead of throwing — a game patch must not break the read", () => {
+    const resolved = enumFromCode(ACTUAL_TYRE_COMPOUND_CODES, 99);
+
+    expect(resolved).toBe("UNKNOWN_99");
+    expect(isKnownEnum(resolved!)).toBe(false);
+    expect(unknownEnumValue(resolved!)).toBe(99);
+    expect(displayEnum(resolved!)).toBe("Unknown (99)");
+  });
+
+  it("keeps NULL distinct from a zero code — 0 is a real member of several of these", () => {
+    expect(enumFromCode(PIT_STATUS_CODES, null)).toBeNull();
+    expect(enumFromCode(PIT_STATUS_CODES, 0)).toBe("NONE");
+  });
+
+  it("resolves FlagStatus -1, which is a named member rather than the fallback", () => {
+    const resolved = enumFromCode(FLAG_STATUS_CODES, -1);
+
+    expect(resolved).toBe("UNKNOWN");
+    expect(isKnownEnum(resolved!)).toBe(true);
+  });
+
+  it("degrades an unrecognised negative code round-trippably", () => {
+    expect(unknownEnumValue(enumFromCode(FLAG_STATUS_CODES, -7)!)).toBe(-7);
+  });
+
+  it("maps the compound tables over the gaps the game leaves in its ids", () => {
+    // Actual compound ids jump 0 -> 7; 1..6 are genuinely unassigned.
+    expect(enumFromCode(ACTUAL_TYRE_COMPOUND_CODES, 0)).toBe("NONE");
+    expect(enumFromCode(ACTUAL_TYRE_COMPOUND_CODES, 7)).toBe("INTER");
+    expect(enumFromCode(ACTUAL_TYRE_COMPOUND_CODES, 3)).toBe("UNKNOWN_3");
   });
 });

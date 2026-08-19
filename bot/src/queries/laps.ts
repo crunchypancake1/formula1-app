@@ -4,8 +4,7 @@ export interface FastestLap {
   user_id: number;
   driver_name: string;
   lap_number: number;
-  /** BIGINT — string. */
-  lap_time_ms: string;
+  lap_time_ms: number;
 }
 
 /** Pure over its query function so it can be tested without a database. */

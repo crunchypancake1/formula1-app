@@ -1,6 +1,7 @@
 """Repository for car_frame_motion_ex (Packet 13 — Motion Ex, player car only)."""
 
 import logging
+from datetime import datetime
 from typing import Optional
 
 from database.client import PostgresClient
@@ -56,10 +57,13 @@ class CarFrameMotionExRepository(RepositoryBase):
         """INSERT one motion_ex row. The tuple matches CAR_FRAME_MOTION_EX_COLUMNS in order."""
         self._execute(self._SQL, row, table_name=self.TABLE_NAME)
 
-    def delete_after(self, session_uid: str, session_time: float) -> int:
+    def delete_after(
+        self,
+        session_uid: str,
+        session_time: float,
+        session_start: Optional[datetime] = None,
+    ) -> int:
         """Discard rows recorded after a flashback's rewind point."""
-        return self._execute(
-            "DELETE FROM telemetry.car_frame_motion_ex WHERE session_uid = %s AND session_time > %s",
-            (session_uid, session_time),
-            table_name=self.TABLE_NAME,
+        return self._delete_frames_after(
+            self.TABLE_NAME, session_uid, session_time, session_start
         )

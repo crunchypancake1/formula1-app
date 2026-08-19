@@ -3,7 +3,7 @@
 -- telemetry_public mirrors m_yourTelemetry: false = Restricted (the game zeroes
 -- fuel/ERS/damage for this car in everyone else's stream), true = Public.
 CREATE TABLE IF NOT EXISTS telemetry.entries (
-    session_uid VARCHAR(255) NOT NULL REFERENCES telemetry.sessions(session_uid) ON DELETE CASCADE,
+    session_uid VARCHAR(20) NOT NULL REFERENCES telemetry.sessions(session_uid) ON DELETE CASCADE,
     user_id INTEGER NOT NULL REFERENCES identity.users(id),
     car_index SMALLINT NOT NULL,
     team_id INTEGER NOT NULL REFERENCES telemetry.teams(team_id),
@@ -23,5 +23,7 @@ CREATE TABLE IF NOT EXISTS telemetry.entries (
     CONSTRAINT ck_entries_car_index_valid CHECK (car_index >= 0 AND car_index < 24)
 );
 
-CREATE INDEX IF NOT EXISTS idx_entries_session_uid ON telemetry.entries(session_uid);
+-- No index on session_uid alone: the primary key (session_uid, user_id) leads
+-- with it, so roster lookups already have one.
+-- user_id is the other direction — "every session this driver entered".
 CREATE INDEX IF NOT EXISTS idx_entries_user_id ON telemetry.entries(user_id);

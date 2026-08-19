@@ -9,7 +9,7 @@
 -- "no tyres left".
 CREATE TABLE IF NOT EXISTS telemetry.tyre_sets (
     id                  SERIAL PRIMARY KEY,
-    session_uid         VARCHAR(255) NOT NULL REFERENCES telemetry.sessions(session_uid) ON DELETE CASCADE,
+    session_uid         VARCHAR(20) NOT NULL REFERENCES telemetry.sessions(session_uid) ON DELETE CASCADE,
     user_id             INTEGER NOT NULL REFERENCES identity.users(id),
     lap_number          SMALLINT NOT NULL,
     set_index           SMALLINT NOT NULL,
@@ -24,5 +24,5 @@ CREATE TABLE IF NOT EXISTS telemetry.tyre_sets (
     UNIQUE (session_uid, user_id, lap_number, set_index)
 );
 
-CREATE INDEX IF NOT EXISTS idx_tyre_sets_snapshot
-    ON telemetry.tyre_sets(session_uid, user_id, lap_number);
+-- No secondary index: (session_uid, user_id, lap_number) is a prefix of the
+-- UNIQUE constraint above, which already indexes a whole snapshot contiguously.

@@ -11,7 +11,7 @@
 -- (session_start_utc + session_time), which is what makes those rows
 -- deterministic and de-duplicable across listener restarts.
 CREATE TABLE IF NOT EXISTS telemetry.sessions (
-    session_uid VARCHAR(255) PRIMARY KEY,
+    session_uid VARCHAR(20) PRIMARY KEY,
     weekend_link VARCHAR(255) NOT NULL,
     session_link VARCHAR(255) NOT NULL,
     season_link VARCHAR(255),
@@ -95,3 +95,10 @@ CREATE INDEX IF NOT EXISTS idx_sessions_track ON telemetry.sessions(track_id, se
 
 -- Critical for standings JOIN (races.weekend_link -> sessions.weekend_link)
 CREATE INDEX IF NOT EXISTS idx_sessions_weekend_link ON telemetry.sessions(weekend_link);
+
+-- "Most recently run session" — ORDER BY session_start_utc DESC LIMIT n. Both
+-- Workers open on this query and the dashboard re-runs it on every poll, so it
+-- is the single hottest read in the app; without this index it is a seq scan
+-- plus a sort over every session ever recorded.
+CREATE INDEX IF NOT EXISTS idx_sessions_start_utc
+ON telemetry.sessions(session_start_utc DESC);

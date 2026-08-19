@@ -13,11 +13,22 @@
 -- Columns marked "restricted" are zeroed by the game for any *other* driver
 -- whose Your Telemetry setting is Restricted. The listener stores NULL for
 -- those, never the game's fake 0.
+--
+-- Enum-valued columns hold the game's raw integer, not a resolved name. At this
+-- table's row count a name costs ~8 bytes against a SMALLINT's 2, and there are
+-- eleven of them. Resolution happens in @f1/db (packages/db/src/enums.ts).
+--
+-- A native PostgreSQL ENUM type would be the usual answer and is the wrong one
+-- here: an unrecognised value must never fail a write (see safe_enum_name), and
+-- an enum would reject a member added by a game patch outright. An integer
+-- stores anything the game sends and the query layer degrades it to
+-- UNKNOWN_<n>, which is the same contract the listener used to apply on write.
 
 CREATE TABLE IF NOT EXISTS telemetry.car_frame (
     -- Meta
     timestamp                   TIMESTAMPTZ NOT NULL,
-    session_uid                 VARCHAR(255) NOT NULL,
+    session_uid                 VARCHAR(20) NOT NULL
+                                REFERENCES telemetry.sessions(session_uid) ON DELETE CASCADE,
     user_id                     INTEGER NOT NULL,
     session_time                FLOAT NOT NULL,
     overall_frame_identifier    INTEGER NOT NULL,
@@ -31,20 +42,24 @@ CREATE TABLE IF NOT EXISTS telemetry.car_frame (
     g_force_lateral REAL, g_force_longitudinal REAL, g_force_vertical REAL,
     yaw REAL, pitch REAL, roll REAL,
 
-    -- Car Telemetry / Packet 6: scalars
-    speed INTEGER,
+    -- Car Telemetry / Packet 6: scalars.
+    -- speed and engine_rpm are uint16 on the wire and fit SMALLINT;
+    -- rev_lights_bit_value is uint16 too but is a bit field, so values above
+    -- 32767 are reachable and it stays INTEGER.
+    speed SMALLINT,
     throttle REAL, steer REAL, brake REAL,
     clutch SMALLINT, gear SMALLINT,
-    engine_rpm INTEGER, drs BOOLEAN,
+    engine_rpm SMALLINT, drs BOOLEAN,
     rev_lights_percent SMALLINT, rev_lights_bit_value INTEGER,
     engine_temperature SMALLINT,
 
     -- Car Telemetry / Packet 6: per-wheel (RL, RR, FL, FR — the game's order)
-    brakes_temp_rl INTEGER, brakes_temp_rr INTEGER, brakes_temp_fl INTEGER, brakes_temp_fr INTEGER,
+    brakes_temp_rl SMALLINT, brakes_temp_rr SMALLINT, brakes_temp_fl SMALLINT, brakes_temp_fr SMALLINT,
     tyres_surface_temp_rl SMALLINT, tyres_surface_temp_rr SMALLINT, tyres_surface_temp_fl SMALLINT, tyres_surface_temp_fr SMALLINT,
     tyres_inner_temp_rl SMALLINT, tyres_inner_temp_rr SMALLINT, tyres_inner_temp_fl SMALLINT, tyres_inner_temp_fr SMALLINT,
     tyres_pressure_rl REAL, tyres_pressure_rr REAL, tyres_pressure_fl REAL, tyres_pressure_fr REAL,
-    surface_type_rl VARCHAR(20), surface_type_rr VARCHAR(20), surface_type_fl VARCHAR(20), surface_type_fr VARCHAR(20),
+    -- SurfaceType code per wheel (0 = TARMAC … 11 = RIDGED)
+    surface_type_rl SMALLINT, surface_type_rr SMALLINT, surface_type_fl SMALLINT, surface_type_fr SMALLINT,
 
     -- Car Telemetry / Packet 6: packet-level, player car only (NULL elsewhere).
     -- 255 = MFD closed; suggested_gear 0 = none suggested.
@@ -52,9 +67,12 @@ CREATE TABLE IF NOT EXISTS telemetry.car_frame (
     mfd_panel_index_secondary_player SMALLINT,
     suggested_gear SMALLINT,
 
-    -- Lap Data / Packet 2: timing (minutes/ms split fields already recombined)
-    last_lap_time_ms BIGINT,
-    current_lap_time_ms BIGINT,
+    -- Lap Data / Packet 2: timing (minutes/ms split fields already recombined).
+    -- uint32 on the wire; INTEGER covers 24 days of milliseconds, and keeping
+    -- these out of BIGINT is what stops them arriving in the Workers as strings
+    -- (Hyperdrive runs with fetch_types: false).
+    last_lap_time_ms INTEGER,
+    current_lap_time_ms INTEGER,
     sector1_time_ms INTEGER,
     sector2_time_ms INTEGER,
     lap_distance REAL,
@@ -65,10 +83,12 @@ CREATE TABLE IF NOT EXISTS telemetry.car_frame (
     position SMALLINT,
     grid_position SMALLINT,
     current_lap_num SMALLINT,
-    sector VARCHAR(10),
-    pit_status VARCHAR(20),
-    driver_status VARCHAR(20),
-    result_status VARCHAR(20),
+    -- Enum codes: Sector (0-2), PitStatus (0-2), DriverStatus (0-4),
+    -- ResultStatus (0-7). Resolved to names by @f1/db.
+    sector SMALLINT,
+    pit_status SMALLINT,
+    driver_status SMALLINT,
+    result_status SMALLINT,
     current_lap_invalid BOOLEAN,
 
     -- Lap Data / Packet 2: gaps (gap_to_car_behind_ms is derived from the car
@@ -99,15 +119,17 @@ CREATE TABLE IF NOT EXISTS telemetry.car_frame (
     pit_limiter BOOLEAN,
     drs_allowed BOOLEAN,
     drs_activation_distance INTEGER,
-    actual_tyre_compound VARCHAR(30),
-    visual_tyre_compound VARCHAR(30),
+    -- Enum codes: ActualTyreCompound, VisualTyreCompound, FlagStatus
+    -- (FlagStatus uses -1 for UNKNOWN, hence a signed type).
+    actual_tyre_compound SMALLINT,
+    visual_tyre_compound SMALLINT,
     tyres_age_laps SMALLINT,
-    vehicle_fia_flags VARCHAR(20),
+    vehicle_fia_flags SMALLINT,
     network_paused BOOLEAN,
     traction_control SMALLINT,
     anti_lock_brakes BOOLEAN,
-    max_rpm INTEGER,
-    idle_rpm INTEGER,
+    max_rpm SMALLINT,
+    idle_rpm SMALLINT,
     max_gears SMALLINT,
 
     -- Car Status / Packet 7: restricted (NULL for a Restricted driver)
@@ -154,5 +176,14 @@ ALTER TABLE telemetry.car_frame SET (
 
 SELECT add_compression_policy('telemetry.car_frame', INTERVAL '7 days', if_not_exists => TRUE);
 
+-- The primary key leads with `timestamp`, so per-driver frame lookups need
+-- their own index. This is the one the dashboard's DISTINCT ON (user_id) walks
+-- to pull each car's latest frame.
+--
+-- It does not, on its own, keep those reads cheap as the database grows:
+-- `timestamp` is the partitioning column, so a query naming only session_uid
+-- cannot exclude chunks and opens every one of them. Callers should add
+-- `timestamp >= <session_start_utc>` — always available from telemetry.sessions
+-- — which narrows the scan to the chunks the session actually occupies.
 CREATE INDEX IF NOT EXISTS idx_car_frame_session_driver_frame
     ON telemetry.car_frame(session_uid, user_id, overall_frame_identifier DESC);

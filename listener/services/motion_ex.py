@@ -80,6 +80,16 @@ class MotionExService:
         except Exception as e:
             self._logger.error(f"Failed to insert motion_ex: {e}", exc_info=True)
 
-    def discard_after(self, session_uid: str, session_time: float) -> int:
-        """Delete rows recorded after a flashback's rewind point."""
-        return self._repo.delete_after(session_uid, session_time)
+    def discard_after(
+        self,
+        session_uid: str,
+        session_time: float,
+        session_start: Optional[datetime] = None,
+    ) -> int:
+        """
+        Delete rows recorded after a flashback's rewind point.
+
+        session_start is what lets the DELETE bound `timestamp` as well, so
+        TimescaleDB can exclude every chunk this session does not occupy.
+        """
+        return self._repo.delete_after(session_uid, session_time, session_start)

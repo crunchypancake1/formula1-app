@@ -4,7 +4,7 @@
 -- rows are sparse rather than sampled. button_status is the raw uint32 bit
 -- field, buttons_pressed the resolved flag names for readability.
 CREATE TABLE IF NOT EXISTS telemetry.events_buttons (
-    session_uid                 VARCHAR(255) NOT NULL REFERENCES telemetry.sessions(session_uid) ON DELETE CASCADE,
+    session_uid                 VARCHAR(20) NOT NULL REFERENCES telemetry.sessions(session_uid) ON DELETE CASCADE,
     overall_frame_identifier    INTEGER NOT NULL,
     session_time                FLOAT NOT NULL,
     button_status               BIGINT NOT NULL,
@@ -13,4 +13,8 @@ CREATE TABLE IF NOT EXISTS telemetry.events_buttons (
     PRIMARY KEY (session_uid, overall_frame_identifier)
 );
 
-CREATE INDEX IF NOT EXISTS idx_events_buttons_session ON telemetry.events_buttons(session_uid);
+-- No secondary index: the primary key leads with session_uid and continues with
+-- overall_frame_identifier, so the feed's
+-- "WHERE session_uid = $1 ORDER BY overall_frame_identifier DESC LIMIT n"
+-- is a backward index scan on it. A session_uid-only index would be a strictly
+-- worse prefix of the same thing.

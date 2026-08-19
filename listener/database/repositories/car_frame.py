@@ -1,6 +1,7 @@
 """Repository for the car_frame hypertable."""
 
 import logging
+from datetime import datetime
 from typing import Optional
 
 from database.client import PostgresClient
@@ -97,15 +98,26 @@ class CarFrameRepository(RepositoryBase):
             return
         self._execute_many(self._SQL, rows, table_name=self.TABLE_NAME)
 
-    def delete_after(self, session_uid: str, session_time: float) -> int:
+    def delete_after(
+        self,
+        session_uid: str,
+        session_time: float,
+        session_start: Optional[datetime] = None,
+    ) -> int:
         """
         Discard rows recorded after a flashback's rewind point.
 
         A flashback undoes everything the driver did past flashback_session_time,
         so those frames describe a run that no longer happened.
+
+        session_time alone is not a partitioning column, so a DELETE naming only
+        it forces TimescaleDB to open every chunk in the hypertable — the whole
+        history of every session ever recorded, on every flashback. Passing
+        session_start adds the equivalent bound on `timestamp` (rows are written
+        at session_start + session_time, see CarFrameService), which lets chunk
+        exclusion cut the DELETE down to the chunks this session actually
+        touches. The session_time predicate stays as the authority.
         """
-        return self._execute(
-            "DELETE FROM telemetry.car_frame WHERE session_uid = %s AND session_time > %s",
-            (session_uid, session_time),
-            table_name=self.TABLE_NAME,
+        return self._delete_frames_after(
+            self.TABLE_NAME, session_uid, session_time, session_start
         )

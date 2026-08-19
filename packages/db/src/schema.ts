@@ -1,26 +1,34 @@
 /**
  * Row models for the F1 26 telemetry schema (`schema/*.sql`).
  *
- * Two conventions the listener enforces, which these types deliberately encode:
+ * Three conventions the listener enforces, which these types deliberately encode:
  *
  * 1. **NULL means withheld, never zero.** Fields that are player-only, or hidden
  *    by a driver's telemetry privacy setting, are written as NULL — the listener
  *    never stores a zero-filled stand-in. A `null` here must render as "—", not 0.
  * 2. **BIGINT arrives as a string.** `db.ts` sets `fetch_types: false` (Hyperdrive
  *    cannot cache postgres.js's type-introspection query), so int8 columns come
- *    back as strings. Use `parseMs` rather than coercing at each call site.
+ *    back as strings. Every lap and sector time is INTEGER precisely to stay out
+ *    of that trap — the remaining int8 columns are raw bit fields, not durations.
+ * 3. **car_frame stores enum codes, not names.** It is the one table big enough
+ *    for eleven text columns to matter, so its enum columns are SMALLINT and
+ *    `LiveDriverRow` types them as numbers. `LiveDriver` is the resolved view;
+ *    see `enumFromCode` in ./enums.
  */
 
 import type {
   ActualTyreCompound,
+  DriverStatus,
   FlagStatus,
   Formula,
   GameMode,
+  PitStatus,
   Platform,
   ResultReason,
   ResultStatus,
   Ruleset,
   SafetyCarStatus,
+  Sector,
   SessionType,
   VisualTyreCompound,
   Weather,
@@ -245,8 +253,8 @@ export interface RaceClassificationRow {
   num_pit_stops: number;
   result_status: ResultStatus;
   result_reason: ResultReason | null;
-  /** BIGINT — string, or null when no valid lap was set. */
-  best_lap_time_ms: string | null;
+  /** Null when no valid lap was set. */
+  best_lap_time_ms: number | null;
   game_points: number | null;
   total_race_time: number;
   penalties_time: number;
@@ -264,8 +272,8 @@ export interface QualifyingClassificationRow {
   user_id: number;
   position: number;
   num_laps: number;
-  /** BIGINT — string, or null when no valid lap was set. */
-  best_lap_time_ms: string | null;
+  /** Null when no valid lap was set. */
+  best_lap_time_ms: number | null;
   result_status: ResultStatus;
   result_reason: ResultReason | null;
   game_points: number | null;
@@ -289,8 +297,8 @@ export interface LapRow {
   session_uid: string;
   user_id: number;
   lap_number: number;
-  /** BIGINT — string, or null when the lap has no recorded time. */
-  lap_time_ms: string | null;
+  /** Null when the lap has no recorded time. */
+  lap_time_ms: number | null;
   sector1_time_ms: number | null;
   sector2_time_ms: number | null;
   sector3_time_ms: number | null;
@@ -321,8 +329,8 @@ export interface SessionBest {
   user_id: number;
   driver_name: string;
   best_lap_num: number | null;
-  /** BIGINT — string. Null when no best lap has been set. */
-  best_lap_time_ms: string | null;
+  /** Null when no best lap has been set. */
+  best_lap_time_ms: number | null;
   best_sector1_lap_num: number | null;
   best_sector1_time_ms: number | null;
   best_sector2_lap_num: number | null;
@@ -369,26 +377,27 @@ export interface LiveDriverRow {
 
   position: number | null;
   current_lap_num: number | null;
-  sector: string | null;
+  /** Raw Sector code — resolve with `enumFromCode(SECTOR_CODES, …)`. */
+  sector: number | null;
   lap_distance: number | null;
   total_distance: number | null;
 
-  /** BIGINT — string, or null before a lap/the current lap has a time. */
-  last_lap_time_ms: string | null;
-  current_lap_time_ms: string | null;
+  last_lap_time_ms: number | null;
+  current_lap_time_ms: number | null;
   sector1_time_ms: number | null;
   sector2_time_ms: number | null;
 
   gap_to_leader_ms: number | null;
   gap_to_car_ahead_ms: number | null;
 
-  pit_status: string | null;
-  driver_status: string | null;
-  result_status: string | null;
+  /** Raw enum codes — see `*_CODES` in ./enums. */
+  pit_status: number | null;
+  driver_status: number | null;
+  result_status: number | null;
   current_lap_invalid: boolean | null;
 
-  actual_tyre_compound: string | null;
-  visual_tyre_compound: string | null;
+  actual_tyre_compound: number | null;
+  visual_tyre_compound: number | null;
   tyres_age_laps: number | null;
 
   num_pit_stops: number | null;
@@ -399,8 +408,34 @@ export interface LiveDriverRow {
   /** The 2026 Boost — replaced fixed DRS zones with an on-demand overtaking aid. */
   overtake_active: boolean | null;
 
-  /** This driver's personal-best lap this session. BIGINT — string, or null if none yet. */
-  best_lap_time_ms: string | null;
+  /** This driver's personal-best lap this session, or null if none yet. */
+  best_lap_time_ms: number | null;
+}
+
+/**
+ * A `LiveDriverRow` with its enum codes resolved to member names — what the
+ * dashboard actually renders.
+ *
+ * car_frame stores enums as integers (see packages/db/src/enums.ts), so this is
+ * the boundary where they become the same `UNKNOWN_<n>`-capable strings every
+ * other table hands back. Field names are identical to the row's.
+ */
+export interface LiveDriver
+  extends Omit<
+    LiveDriverRow,
+    | "sector"
+    | "pit_status"
+    | "driver_status"
+    | "result_status"
+    | "actual_tyre_compound"
+    | "visual_tyre_compound"
+  > {
+  sector: Sector | null;
+  pit_status: PitStatus | null;
+  driver_status: DriverStatus | null;
+  result_status: ResultStatus | null;
+  actual_tyre_compound: ActualTyreCompound | null;
+  visual_tyre_compound: VisualTyreCompound | null;
 }
 
 // ---------------------------------------------------------------------------

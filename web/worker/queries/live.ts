@@ -1,4 +1,43 @@
-import type { LiveDriverRow, Sql } from "@f1/db";
+import {
+  ACTUAL_TYRE_COMPOUND_CODES,
+  DRIVER_STATUS_CODES,
+  enumFromCode,
+  PIT_STATUS_CODES,
+  RESULT_STATUS_CODES,
+  SECTOR_CODES,
+  VISUAL_TYRE_COMPOUND_CODES,
+  type LiveDriver,
+  type LiveDriverRow,
+  type Sql,
+} from "@f1/db";
+
+/**
+ * Resolve one row's enum codes to member names.
+ *
+ * car_frame stores the game's raw integers (see packages/db/src/enums.ts), so
+ * this is where they become the same `UNKNOWN_<n>`-capable strings every other
+ * table returns — an unrecognised code degrades rather than throwing, which is
+ * what lets a game patch add a tyre compound without breaking the dashboard.
+ *
+ * Pure over its input so it can be tested without a database.
+ */
+export function resolveLiveDriver(row: LiveDriverRow): LiveDriver {
+  return {
+    ...row,
+    sector: enumFromCode(SECTOR_CODES, row.sector),
+    pit_status: enumFromCode(PIT_STATUS_CODES, row.pit_status),
+    driver_status: enumFromCode(DRIVER_STATUS_CODES, row.driver_status),
+    result_status: enumFromCode(RESULT_STATUS_CODES, row.result_status),
+    actual_tyre_compound: enumFromCode(
+      ACTUAL_TYRE_COMPOUND_CODES,
+      row.actual_tyre_compound
+    ),
+    visual_tyre_compound: enumFromCode(
+      VISUAL_TYRE_COMPOUND_CODES,
+      row.visual_tyre_compound
+    ),
+  };
+}
 
 /**
  * Every driver's latest telemetry.car_frame row for a session, joined to
@@ -9,8 +48,11 @@ import type { LiveDriverRow, Sql } from "@f1/db";
  * rows out — before any joins happen, so the joins never touch more than one
  * row per car regardless of how many frames the session has accumulated.
  */
-export function liveDrivers(sql: Sql, sessionUid: string) {
-  return sql<LiveDriverRow[]>`
+export async function liveDrivers(
+  sql: Sql,
+  sessionUid: string
+): Promise<LiveDriver[]> {
+  const rows = await sql<LiveDriverRow[]>`
     WITH latest AS (
       SELECT DISTINCT ON (user_id) *
         FROM telemetry.car_frame
@@ -62,4 +104,6 @@ export function liveDrivers(sql: Sql, sessionUid: string) {
       ) best ON true
      ORDER BY latest.position NULLS LAST, latest.user_id
   `;
+
+  return rows.map(resolveLiveDriver);
 }

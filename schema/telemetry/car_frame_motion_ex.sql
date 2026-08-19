@@ -9,7 +9,8 @@
 
 CREATE TABLE IF NOT EXISTS telemetry.car_frame_motion_ex (
     timestamp               TIMESTAMPTZ NOT NULL,
-    session_uid             VARCHAR(255) NOT NULL,
+    session_uid             VARCHAR(20) NOT NULL
+                            REFERENCES telemetry.sessions(session_uid) ON DELETE CASCADE,
     user_id                 INTEGER NOT NULL,
     session_time            FLOAT NOT NULL,
     overall_frame_identifier INTEGER NOT NULL,

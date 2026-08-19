@@ -2,7 +2,7 @@
 -- League points are calculated dynamically from position; game_points is what
 -- the game itself awarded, kept for reference.
 CREATE TABLE IF NOT EXISTS telemetry.race_classification (
-    session_uid VARCHAR(255) NOT NULL REFERENCES telemetry.sessions(session_uid) ON DELETE CASCADE,
+    session_uid VARCHAR(20) NOT NULL REFERENCES telemetry.sessions(session_uid) ON DELETE CASCADE,
     user_id INTEGER NOT NULL REFERENCES identity.users(id),
     position SMALLINT NOT NULL,
     num_laps SMALLINT NOT NULL,
@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS telemetry.race_classification (
     num_pit_stops SMALLINT NOT NULL,
     result_status VARCHAR(50) NOT NULL,
     result_reason VARCHAR(50),
-    best_lap_time_ms BIGINT,
+    best_lap_time_ms INTEGER,
     game_points SMALLINT,
     total_race_time FLOAT NOT NULL,
     penalties_time SMALLINT NOT NULL,
@@ -24,8 +24,9 @@ CREATE TABLE IF NOT EXISTS telemetry.race_classification (
     CONSTRAINT ck_race_class_position_valid CHECK (position >= 0)
 );
 
-CREATE INDEX IF NOT EXISTS idx_race_class_session ON telemetry.race_classification(session_uid);
+-- Classification is read as "the whole field for one session, in finishing
+-- order", which this index serves end to end. A bare session_uid index would
+-- be a prefix of the primary key and of this one; an INCLUDE (user_id) variant
+-- cannot produce an index-only scan either, because every caller selects the
+-- full row.
 CREATE INDEX IF NOT EXISTS idx_race_class_position ON telemetry.race_classification(session_uid, position);
-
--- Covering index for standings queries (direct user_id join, no entries needed)
-CREATE INDEX IF NOT EXISTS idx_race_class_standings ON telemetry.race_classification(session_uid, position) INCLUDE (user_id);

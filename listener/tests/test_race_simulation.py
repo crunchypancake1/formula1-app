@@ -97,6 +97,50 @@ class TestRaceSimulation:
         )
         assert row[0] > 0, "No car_frame rows with speed > 0"
 
+    def test_car_frame_enums_stored_as_codes(self, db_client):
+        """
+        car_frame's enum columns hold the game's raw integer, not a resolved name.
+
+        Resolution moved to the query layer (@f1/db) because eleven text columns
+        cost ~66 bytes a row here. The codes below are what the scenario feeds in
+        (see tests/factories.py), so this pins the contract the TypeScript
+        `*_CODES` tables are written against — a listener change that started
+        writing names again would still satisfy the column type, but not this.
+        """
+        row = self._query_one(
+            db_client,
+            """
+            SELECT array_agg(DISTINCT sector),
+                   array_agg(DISTINCT pit_status),
+                   array_agg(DISTINCT driver_status),
+                   array_agg(DISTINCT result_status),
+                   array_agg(DISTINCT actual_tyre_compound),
+                   array_agg(DISTINCT visual_tyre_compound),
+                   array_agg(DISTINCT surface_type_rl)
+            FROM telemetry.car_frame
+            WHERE session_uid = %s AND driver_status IS NOT NULL
+            """,
+            (_SESSION_UID,),
+        )
+        sector, pit, driver, result, actual, visual, surface = row
+        assert driver, "No car_frame rows with enum columns populated"
+
+        # Every value is an integer inside its enum's declared range. A resolved
+        # name could not survive the SMALLINT column, and the game's 255 "not
+        # set" sentinel would fall outside every range below.
+        valid = {
+            "Sector": (sector, range(0, 3)),
+            "PitStatus": (pit, range(0, 3)),
+            "DriverStatus": (driver, range(0, 5)),
+            "ResultStatus": (result, range(0, 8)),
+            "ActualTyreCompound": (actual, range(0, 23)),
+            "VisualTyreCompound": (visual, range(0, 23)),
+            "SurfaceType": (surface, range(0, 12)),
+        }
+        for name, (values, allowed) in valid.items():
+            assert all(isinstance(v, int) for v in values), f"{name}: not integers — {values}"
+            assert all(v in allowed for v in values), f"{name}: out of range — {values}"
+
     def test_session_timeline(self, db_client):
         """Session timeline has multiple entries."""
         row = self._query_one(

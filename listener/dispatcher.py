@@ -373,9 +373,17 @@ class PacketDispatcher:
         rewind_to = event.flashback_session_time
         self._frame_buffer.discard_session(session_uid)
 
-        discarded = self._car_frame_service.discard_after(session_uid, rewind_to)
+        # The session anchor turns the DELETEs' session_time bound into a
+        # `timestamp` bound as well, which is the frame hypertables'
+        # partitioning column — without it each flashback scans every chunk of
+        # every session ever recorded.
+        session_start = self._session_service.get_session_start(session_uid)
+
+        discarded = self._car_frame_service.discard_after(
+            session_uid, rewind_to, session_start
+        )
         if self._motion_ex_service is not None:
-            self._motion_ex_service.discard_after(session_uid, rewind_to)
+            self._motion_ex_service.discard_after(session_uid, rewind_to, session_start)
 
         # Lap-completion detection tracks the highest lap number seen; after a
         # rewind those counters are ahead of reality.

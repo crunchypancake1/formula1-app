@@ -145,6 +145,19 @@ table. `enums/` mirrors the game's integer enum tables (teams, tracks,
 tyre compounds, etc.) via `safe_enum_name` (`database/repositories/base.py`)
 so unrecognized values degrade to a logged warning instead of a crash.
 
+**`car_frame` is the exception: it stores enum codes, not names.** Its eleven
+enum columns (`sector`, `pit_status`, `driver_status`, `result_status`, four
+`surface_type_*`, both tyre compounds, `vehicle_fia_flags`) are SMALLINT holding
+the game's raw integer — ~66 bytes a row cheaper than the resolved names, which
+matters only on this table. `services/car_frame.py` therefore does *not* call
+`safe_enum_name`; `packages/db/src/enums.ts` resolves the codes on read via
+`enumFromCode`, applying the same `UNKNOWN_<n>` degradation. Every other table
+keeps resolved names so ad-hoc SQL stays readable.
+
+Do not "fix" this by introducing a native PostgreSQL `ENUM` type. An unknown
+value must never fail a write, and an enum would reject a member added by a game
+patch outright — an integer column stores anything the game sends.
+
 ### Schema (`schema/`)
 
 `schema/run_schema.py` applies `.sql` files in explicit FK-dependency order
@@ -168,6 +181,19 @@ Unknown enum values must never block collection. `safe_enum_name` degrades to
 `team_id` before the roster references it — a team added by a game patch would
 otherwise fail the FK and take the whole session's roster with it.
 
+**Indexes are deliberately sparse.** A `(session_uid)` index is a prefix of
+almost every table's primary key, so adding one buys nothing and costs write
+throughput on a table taking hundreds of rows a second. Before adding an index,
+check whether the PK or an existing UNIQUE already leads with those columns; the
+`.sql` files carry a comment where one was deliberately left out.
+
+**Hypertable queries must bound `timestamp`.** It is the partitioning column on
+`car_frame`, `car_frame_damage`, `car_frame_motion_ex` and `session_timeline`, so
+a query naming only `session_uid` cannot exclude chunks and opens every chunk in
+the table — the whole history, on every call. `sessions.session_start_utc` is
+always available as the lower bound; `RepositoryBase._delete_frames_after` shows
+the pattern for the flashback DELETEs.
+
 ### Web / bot Workers
 
 Both are thin Hono apps sharing `packages/db` (`@f1/db`): connection setup,
@@ -175,7 +201,9 @@ typed row models for every telemetry table, enum types mirroring
 `listener/enums/`, and the schema health probe. `connect()` uses the
 `HYPERDRIVE` binding (`postgres` npm package, `fetch_types: false` since
 Hyperdrive can't cache the type-introspection query — the consequence is
-BIGINT columns arrive as strings; use `parseMs`). Hyperdrive caching itself
+BIGINT columns arrive as strings, which is why every lap and sector time is
+INTEGER; the columns left as BIGINT are raw bit fields, not durations).
+Hyperdrive caching itself
 is disabled project-wide (see `DEPLOYMENT.md`) because the live view needs
 fresh car positions on every poll, not cached rows.
 

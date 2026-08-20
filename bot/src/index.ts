@@ -1,7 +1,8 @@
 import { Hono } from "hono";
 import { checkSchema, connect, schemaMarkerColumns, type SessionRow, type Sql } from "@f1/db";
-import { editChannel, createChannel, editMessage, postMessage } from "./discord/client";
+import { editChannel, createChannel, createRole, editMessage, listRoles, postMessage } from "./discord/client";
 import { finalCardFor, placeholderCard } from "./discord/cards";
+import { TEAM_ROLES } from "./discord/teamRoles";
 import type { BotEnv } from "./env";
 import {
   activeWeekend,
@@ -12,6 +13,7 @@ import {
   pendingSessionMessages,
   sessionMessage,
 } from "./queries/discordState";
+import { teamRoles, upsertTeamRole } from "./queries/discordRoles";
 import { sessionBests } from "./queries/laps";
 import { qualifyingClassification, raceClassification } from "./queries/results";
 import { latestSession, latestSessionInWeekend, sessionByUid } from "./queries/sessions";
@@ -175,11 +177,35 @@ async function finalizePendingCards(sql: Sql, token: string): Promise<void> {
   }
 }
 
+/**
+ * Creates the guild role for any F1 team (or Reserve) that doesn't have one
+ * yet, recording each in `bot.discord_team_roles` so future features can look
+ * up a team's role_id without another Discord API call. Skips the guild-roles
+ * fetch entirely once every role is already tracked — this runs on every tick
+ * but the roles almost never change after initial setup.
+ */
+async function ensureTeamRoles(sql: Sql, env: BotEnv, token: string): Promise<void> {
+  const tracked = new Set((await teamRoles(sql)).map((row) => row.role_key));
+  const missing = TEAM_ROLES.filter((role) => !tracked.has(role.key));
+  if (missing.length === 0) return;
+
+  const guildRoles = await listRoles(token, env.DISCORD_GUILD_ID);
+  const byName = new Map(guildRoles.map((role) => [role.name, role]));
+
+  for (const role of missing) {
+    const existing = byName.get(role.name);
+    const guildRole = existing ?? (await createRole(token, env.DISCORD_GUILD_ID, role.name, role.color));
+    await upsertTeamRole(sql, role.key, guildRole.id, role.name, role.color);
+  }
+}
+
 async function tick(env: BotEnv): Promise<void> {
   const sql = connect(env);
   try {
-    const session = await latestSession(sql);
     const token = await env.DISCORD_BOT_TOKEN.get();
+    await ensureTeamRoles(sql, env, token);
+
+    const session = await latestSession(sql);
 
     if (session) {
       const channelId = await ensureWeekendChannel(sql, env, token, session);

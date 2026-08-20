@@ -19,6 +19,12 @@ export interface DiscordMessage {
   channel_id: string;
 }
 
+export interface DiscordRole {
+  id: string;
+  name: string;
+  color: number;
+}
+
 class DiscordApiError extends Error {
   constructor(method: string, path: string, status: number, body: string) {
     super(`Discord API ${method} ${path} -> ${status}: ${body}`);
@@ -67,6 +73,22 @@ export function editChannel(
   changes: { name?: string; parent_id?: string }
 ): Promise<DiscordChannel> {
   return discordFetch<DiscordChannel>(token, "PATCH", `/channels/${channelId}`, changes);
+}
+
+export function listRoles(token: string, guildId: string): Promise<DiscordRole[]> {
+  return discordFetch<DiscordRole[]>(token, "GET", `/guilds/${guildId}/roles`);
+}
+
+export function createRole(
+  token: string,
+  guildId: string,
+  name: string,
+  color: number
+): Promise<DiscordRole> {
+  return discordFetch<DiscordRole>(token, "POST", `/guilds/${guildId}/roles`, {
+    name,
+    color,
+  });
 }
 
 export function postMessage(

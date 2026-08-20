@@ -513,6 +513,20 @@ export interface DiscordSessionMessageRow {
   created_at: Date;
 }
 
+/**
+ * bot.discord_team_roles — the guild role the bot created for one F1 team (or
+ * Reserve). role_key is not telemetry.teams.team_id: Reserve isn't a real
+ * team, and this only covers the current F1 26 grid, not every historical id
+ * that table accepts.
+ */
+export interface DiscordTeamRoleRow {
+  role_key: string;
+  role_id: string;
+  role_name: string;
+  color: number;
+  created_at: Date;
+}
+
 // ---------------------------------------------------------------------------
 // Value helpers
 // ---------------------------------------------------------------------------

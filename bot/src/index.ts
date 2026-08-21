@@ -2,7 +2,11 @@ import { Hono } from "hono";
 import { checkSchema, connect, schemaMarkerColumns, type SessionRow, type Sql } from "@f1/db";
 import { editChannel, createChannel, editMessage, postMessage } from "./discord/client";
 import { finalCardFor, placeholderCard } from "./discord/cards";
+import { COMMANDS, COMPONENTS, ensureCommands } from "./discord/commands";
+import { dispatchEvent, type WebhookEvent } from "./discord/events";
+import { dispatchInteraction, type Interaction } from "./discord/interactions";
 import { ensureTeamRoles } from "./discord/roleStore";
+import { verifyRequestHeaders } from "./discord/verify";
 import type { BotEnv } from "./env";
 import {
   activeWeekend,
@@ -21,11 +25,40 @@ import { trackById } from "./queries/tracks";
 
 const app = new Hono<{ Bindings: BotEnv }>();
 
-app.get("/", (c) =>
-  c.json({ service: "formula1-bot", status: "ok", health: "/health" })
+/** Path-scoped Workers Routes don't strip the prefix, so every path starts with `/bot`. */
+app.get("/bot", (c) =>
+  c.json({ service: "formula1-bot", status: "ok", health: "/bot/health" })
 );
 
-app.get("/health", async (c) => {
+/** Both must 401 an unsigned request — the portal probes that before saving the URL. */
+app.post("/bot/interactions", async (c) => {
+  const raw = await c.req.text();
+  if (!(await verifyRequestHeaders(c.env.DISCORD_PUBLIC_KEY, c.req.raw.headers, raw))) {
+    return c.text("invalid request signature", 401);
+  }
+
+  const interaction = JSON.parse(raw) as Interaction;
+  const response = await dispatchInteraction(
+    interaction,
+    c.env,
+    (promise) => c.executionCtx.waitUntil(promise),
+    { commands: COMMANDS, components: COMPONENTS }
+  );
+  return c.json(response);
+});
+
+app.post("/bot/events", async (c) => {
+  const raw = await c.req.text();
+  if (!(await verifyRequestHeaders(c.env.DISCORD_PUBLIC_KEY, c.req.raw.headers, raw))) {
+    return c.text("invalid request signature", 401);
+  }
+
+  // 204 for the PING and every real event alike; a JSON body makes Discord retry.
+  c.executionCtx.waitUntil(dispatchEvent(JSON.parse(raw) as WebhookEvent, c.env));
+  return c.body(null, 204);
+});
+
+app.get("/bot/health", async (c) => {
   const sql = connect(c.env);
   try {
     const schema = await checkSchema(() => schemaMarkerColumns(sql));
@@ -203,6 +236,10 @@ async function tick(env: BotEnv): Promise<void> {
 
   await step("teamRoles", async () => {
     await ensureTeamRoles(env.BOT_STATE, token, env.DISCORD_GUILD_ID);
+  });
+
+  await step("commands", async () => {
+    await ensureCommands(env.BOT_STATE, token, env.DISCORD_GUILD_ID);
   });
 
   const sql = connect(env);

@@ -71,7 +71,7 @@ startup. Hyperdrive holds no schema state (query caching is disabled and
 | Worker | Route | Health check |
 |---|---|---|
 | `formula1-web` | `f1.crunchypancake.com` | `GET /api/health` |
-| `formula1-bot` | `f1-bot.crunchypancake.com` | `GET /health` |
+| `formula1-bot` | `f1.crunchypancake.com/bot*` | `GET /bot/health` |
 | `formula1-auth` | `f1.crunchypancake.com/auth*` | *(none — OIDC endpoints only, see below)* |
 
 Both deploy from `master` via Workers Builds, one build connection each,
@@ -101,18 +101,72 @@ Discord channel. It needs:
   discord-bot-token --scopes workers`, then paste in a bot token from the
   Discord Developer Portal with `Manage Channels` + `Send Messages` +
   `Manage Messages` + `Manage Roles` permissions in that guild.
+- `DISCORD_PUBLIC_KEY` (`vars`) — from the Developer Portal's **General
+  Information** page. It only ever verifies inbound signatures, so it is not a
+  secret and stays in `wrangler.jsonc` rather than the Secrets Store. The
+  application id is deliberately *not* configured: the bot token already
+  identifies the app, so `currentApplicationId` reads it from
+  `GET /applications/@me` when a command sync actually happens, and inbound
+  interactions carry it in their payload.
 - `BOT_STATE` — the KV namespace above. Holds the team-role map the bot
-  builds on its first tick (`bot/src/discord/roleStore.ts`); deleting the
-  namespace's contents just makes the next tick rebuild it from the guild.
+  builds on its first tick (`bot/src/discord/roleStore.ts`) and the fingerprint
+  of the last-registered command set (`bot/src/discord/commands.ts`); deleting
+  the namespace's contents just makes the next tick rebuild both.
 
 `Manage Roles` is what lets the bot create the per-team roles, and the bot's
 own highest role has to sit **above** the roles it manages in the guild's role
 list — Discord refuses `POST /guilds/{id}/roles` for a position at or above the
 caller's own. If the role step logs a `403`, that ordering is why.
 
-The bot's Discord REST calls are outbound-only (`bot/src/discord/client.ts`)
-— no gateway connection, so no `GatewayIntents` or persistent connection to
-manage.
+### Bot slash commands and webhook events
+
+The cron tick is outbound-only, but slash commands are not: Discord POSTs
+those *to* the Worker, so unlike the session cards they need a publicly
+reachable URL. Two Developer Portal fields point at it, both on the
+**General Information** page:
+
+| Portal field | Value |
+|---|---|
+| Interactions Endpoint URL | `https://f1.crunchypancake.com/bot/interactions` |
+| Event Webhooks URL (optional) | `https://f1.crunchypancake.com/bot/events` |
+
+Saving either one makes Discord immediately probe it — a signed request that
+must be answered correctly, then a corrupted one that must come back `401`.
+`bot/src/discord/verify.ts` handles both; if the portal reports the endpoint
+could not be verified, the cause is almost always one of the next two items
+rather than the code.
+
+Note that `DISCORD_PUBLIC_KEY` has to be set *before* saving the URL — with it
+empty, `verifyDiscordRequest` rejects everything and the probe fails.
+
+**Deploy before saving the URL.** The endpoint has to exist and be live at the
+moment you press Save, so `git push` to `master` (or `npm run deploy` in
+`bot/`) first.
+
+**Access needs no change, because the Route itself is the exemption.** A
+request matched by a path-scoped Workers Route on this hostname bypasses the
+Access application; everything else on `f1.crunchypancake.com` gets the login
+redirect. That is why `/auth/*` has never needed an exclusion rule, and why
+widening the bot's pattern from `/bot` to `/bot*` is the whole fix — before it,
+`/bot/interactions` didn't match the route, fell through to `web`, and answered
+Discord with a 302 to the Access login page rather than a PONG.
+
+Verify with curl after deploying; an Access redirect here means the route
+pattern is wrong, not the Access policy:
+
+```sh
+curl -sS -o /dev/null -w '%{http_code}\n' https://f1.crunchypancake.com/bot
+# 200, not 302
+```
+
+Commands themselves register from the cron tick, not by hand: `ensureCommands`
+hashes the schemas in `bot/src/discord/commands.ts` against a KV key and calls
+`PUT /applications/{id}/guilds/{guild}/commands` whenever they differ. They are
+guild-scoped, so a change appears in Discord within a minute of the deploy
+instead of the up-to-an-hour propagation global commands get.
+
+The bot holds no gateway connection either way — no `GatewayIntents`, nothing
+persistent to manage. Interactions arrive as ordinary HTTP requests.
 
 ### Discord OIDC wrapper (`formula1-auth`)
 
@@ -155,11 +209,20 @@ Manual setup, in order (later steps need values from earlier ones):
    provider → OpenID Connect: Auth URL
    `https://f1.crunchypancake.com/auth/authorize`, Token URL `.../auth/token`,
    Certificate URL `.../auth/jwks`, Client ID/Secret = the values from step 2.
-6. Zero Trust → Access → Applications: protect `f1.crunchypancake.com`,
-   **scoping the Application's path to exclude `/auth/*`** — same pattern
-   as `crunchypancake.com/mcp`. Getting this wrong causes a login loop:
-   Access would intercept its own IdP-callback traffic before it reaches
-   the wrapper.
+6. Zero Trust → Access → Applications: protect `f1.crunchypancake.com`. No
+   path exclusion is needed — a request matched by a path-scoped Workers Route
+   bypasses the Access application, so `/auth/*` is exempt by virtue of the
+   Route existing, the same "same hostname, different Worker on a sub-path"
+   arrangement as `crunchypancake.com/mcp`. (Earlier revisions of this document
+   called for an explicit exclusion rule here. It was never necessary, and none
+   was ever created.) Confirm rather than assume — if this is wrong the symptom
+   is a login loop, Access intercepting its own IdP callback before it reaches
+   the wrapper:
+
+   ```sh
+   curl -sS -o /dev/null -w '%{http_code}\n' https://f1.crunchypancake.com/auth/jwks
+   # 200 = the Route takes precedence. 302 = it does not, and Access needs scoping.
+   ```
 7. Access Policy: "Login Method is Discord" — no email allowlist needed,
    guild membership is already the sole gate, enforced inside the wrapper
    before any code is ever minted.

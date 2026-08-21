@@ -1,8 +1,9 @@
 /**
  * Plain `fetch` wrapper over the Discord REST API — no gateway connection.
- * The scheduled handler only ever creates channels, posts messages, edits
- * messages, and renames/moves channels for archiving, all of which are
- * outbound REST calls (confirmed against `/discord/discord-api-docs`).
+ * Everything here is an outbound call we initiate (confirmed against
+ * `/discord/discord-api-docs`); the inbound direction — interactions and
+ * webhook events Discord POSTs to us — lives in `interactions.ts`/`events.ts`
+ * and shares `verify.ts`.
  */
 
 const API_BASE = "https://discord.com/api/v10";
@@ -113,4 +114,74 @@ export function editMessage(
     `/channels/${channelId}/messages/${messageId}`,
     { content }
   );
+}
+
+/** The bot token already identifies the app, so its id needs no `var`. */
+export async function currentApplicationId(token: string): Promise<string> {
+  const app = await discordFetch<{ id: string }>(token, "GET", "/applications/@me");
+  return app.id;
+}
+
+/**
+ * Full overwrite of the guild's command list. Guild-scoped, not global:
+ * these appear instantly where global commands take up to an hour.
+ */
+export function putGuildCommands(
+  token: string,
+  applicationId: string,
+  guildId: string,
+  commands: unknown[]
+): Promise<Array<{ id: string; name: string }>> {
+  return discordFetch(
+    token,
+    "PUT",
+    `/applications/${applicationId}/guilds/${guildId}/commands`,
+    commands
+  );
+}
+
+/** Follow-ups authenticate with the interaction token, so no `Authorization` header. */
+async function interactionWebhook<T>(
+  method: string,
+  applicationId: string,
+  interactionToken: string,
+  path: string,
+  body: unknown
+): Promise<T> {
+  const url = `${API_BASE}/webhooks/${applicationId}/${interactionToken}${path}`;
+  const res = await fetch(url, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    throw new DiscordApiError(method, url, res.status, await res.text());
+  }
+  return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
+}
+
+/** Fills in the loading state left by a deferred (type 5) response. */
+export function editInteractionResponse(
+  applicationId: string,
+  interactionToken: string,
+  content: string
+): Promise<DiscordMessage> {
+  return interactionWebhook(
+    "PATCH",
+    applicationId,
+    interactionToken,
+    "/messages/@original",
+    { content }
+  );
+}
+
+/** Sends an additional message after the initial response has been used up. */
+export function followUpInteraction(
+  applicationId: string,
+  interactionToken: string,
+  content: string,
+  flags?: number
+): Promise<DiscordMessage> {
+  return interactionWebhook("POST", applicationId, interactionToken, "", { content, flags });
 }

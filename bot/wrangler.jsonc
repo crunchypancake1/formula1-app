@@ -14,7 +14,8 @@
 
   "vars": {
     "DISCORD_GUILD_ID": "1301861026844643409",
-    "DISCORD_CHANNEL_NAME": "active-session"
+    "DISCORD_CHANNEL_NAME": "active-session",
+    "DISCORD_PUBLIC_KEY": "0a73727fe37a0143ce907f6fc2eef628c5b173255a87e898979705b9554dd7a3"
   },
 
   "kv_namespaces": [
@@ -40,8 +41,9 @@
     }
   ],
 
+  // The trailing `*` matters: without it only `/bot` itself matches.
   "routes": [
-    { "pattern": "f1.crunchypancake.com/bot", "zone_name": "crunchypancake.com" }
+    { "pattern": "f1.crunchypancake.com/bot*", "zone_name": "crunchypancake.com" }
   ],
 
   "observability": {

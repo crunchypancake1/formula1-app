@@ -209,6 +209,22 @@ fresh car positions on every poll, not cached rows.
 
 Each Worker keeps its SQL in `queries/` (web: sessions, entries, timeline;
 bot: sessions, entries, drivers, laps, results). The query layers are tested
-and typed against the F1 26 schema, but the only routes wired up so far are
-the health endpoints (`/api/health` on web, `/health` on bot) — the dashboard
-UI and bot commands are the current work in progress.
+and typed against the F1 26 schema; the dashboard UI is the current work in
+progress.
+
+`bot` is served from a path-scoped Workers Route (`f1.crunchypancake.com/bot*`)
+rather than its own subdomain, sharing the hostname with `web` and `auth`.
+**Routes with a path pattern don't strip the prefix**, so every handler path in
+`bot/src/index.ts` starts with `/bot` — the health check is `/bot/health`, not
+`/health`. The same applies to `auth` on `/auth*`.
+
+The bot talks to Discord in both directions. Outbound is the cron tick
+(`discord/client.ts`, REST only, no gateway). Inbound is
+`POST /bot/interactions` (slash commands, components, modals) and
+`POST /bot/events` (webhook events), both Ed25519-verified against
+`DISCORD_PUBLIC_KEY` by `discord/verify.ts` before the body is parsed. Adding a
+command means adding one object to `COMMANDS` in `discord/commands.ts` — the
+cron tick re-registers the set with Discord whenever its hash changes, and
+`dispatchInteraction` routes to it. **Anything that queries Postgres must set
+`deferred: true`**: Discord fails an interaction with no response inside 3s,
+which Hyperdrive-over-tunnel does not reliably beat.

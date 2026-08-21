@@ -55,7 +55,6 @@ SCHEMA_EXECUTION_ORDER = {
     "bot": [
         "discord_weekends.sql",
         "discord_session_messages.sql",
-        "discord_team_roles.sql",
     ],
 }
 

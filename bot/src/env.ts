@@ -15,4 +15,9 @@ export interface BotEnv extends Env {
   DISCORD_CHANNEL_NAME: string;
   DISCORD_ARCHIVE_CATEGORY_ID?: string;
   DISCORD_BOT_TOKEN: SecretsStoreSecret;
+  /**
+   * Small, slow-moving Discord bookkeeping that has no business in Postgres —
+   * currently just the team-role map (`discord/roleStore.ts`).
+   */
+  BOT_STATE: KVNamespace;
 }

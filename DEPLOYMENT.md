@@ -8,6 +8,7 @@
 | Workers VPC service | `f1-postgres` | `019fed9e-c8cd-7672-bdbf-44b1cafbcddb` |
 | Hyperdrive | `f1-db` | `ded8933c250e438cac3a2d76b2f97b5e` |
 | Secrets Store | *(shared)* | `d947ac5bb8ef4800ac46fc59128a1a09` |
+| KV namespace | `BOT_STATE` | `f95fefa1c9e245daaa8ed60a9230579b` |
 
 The tunnel predates this project and already has private network access to the
 database host. Nothing about it is managed here.
@@ -89,7 +90,7 @@ listed if the database schema is stale.
 Discord channel. It needs:
 
 - `DISCORD_GUILD_ID` (`vars` in `bot/wrangler.jsonc`) — the target server's id.
-  Currently blank; set it before deploying.
+  Must match `auth/wrangler.jsonc`'s.
 - `DISCORD_CHANNEL_NAME` (`vars`, defaults to `active-session`) — the channel
   the bot creates/reuses for the current weekend.
 - `DISCORD_ARCHIVE_CATEGORY_ID` (optional `vars`, unset by default) — a
@@ -99,7 +100,15 @@ Discord channel. It needs:
   with `npx wrangler secrets-store secret create <store-id> --name
   discord-bot-token --scopes workers`, then paste in a bot token from the
   Discord Developer Portal with `Manage Channels` + `Send Messages` +
-  `Manage Messages` permissions in that guild.
+  `Manage Messages` + `Manage Roles` permissions in that guild.
+- `BOT_STATE` — the KV namespace above. Holds the team-role map the bot
+  builds on its first tick (`bot/src/discord/roleStore.ts`); deleting the
+  namespace's contents just makes the next tick rebuild it from the guild.
+
+`Manage Roles` is what lets the bot create the per-team roles, and the bot's
+own highest role has to sit **above** the roles it manages in the guild's role
+list — Discord refuses `POST /guilds/{id}/roles` for a position at or above the
+caller's own. If the role step logs a `403`, that ordering is why.
 
 The bot's Discord REST calls are outbound-only (`bot/src/discord/client.ts`)
 — no gateway connection, so no `GatewayIntents` or persistent connection to

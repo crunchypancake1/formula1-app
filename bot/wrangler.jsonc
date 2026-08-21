@@ -15,9 +15,19 @@
   },
 
   "vars": {
-    "DISCORD_GUILD_ID": "",
+    "DISCORD_GUILD_ID": "1301861026844643409",
     "DISCORD_CHANNEL_NAME": "active-session"
   },
+
+  // Discord bookkeeping that would be overkill in Postgres: the team-role map
+  // is twelve ids nothing joins against, so it lives here instead of behind
+  // Hyperdrive and the tunnel. See `src/discord/roleStore.ts`.
+  "kv_namespaces": [
+    {
+      "binding": "BOT_STATE",
+      "id": "f95fefa1c9e245daaa8ed60a9230579b"
+    }
+  ],
 
   "hyperdrive": [
     {

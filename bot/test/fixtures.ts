@@ -1,6 +1,5 @@
 import type {
   DiscordSessionMessageRow,
-  DiscordTeamRoleRow,
   DiscordWeekendRow,
   QualifyingClassificationRow,
   RaceClassificationRow,
@@ -201,19 +200,6 @@ export function discordSessionMessageRow(
     channel_id: "channel-1",
     message_id: "message-1",
     finalized: false,
-    created_at: new Date("2026-08-19T18:00:00Z"),
-    ...overrides,
-  };
-}
-
-export function discordTeamRoleRow(
-  overrides: Partial<DiscordTeamRoleRow> = {}
-): DiscordTeamRoleRow {
-  return {
-    role_key: "FERRARI",
-    role_id: "role-1",
-    role_name: "Ferrari",
-    color: 0xe8002d,
     created_at: new Date("2026-08-19T18:00:00Z"),
     ...overrides,
   };

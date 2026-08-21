@@ -2,7 +2,7 @@
  * Guild roles the bot manages: one per F1 26 team plus Reserve. `key` matches
  * `telemetry.teams.name` for the `_26` team_ids (476-486) with that suffix
  * stripped, so future features can join a roster's team_name straight to a
- * role via `bot.discord_team_roles`.
+ * role id via the map `discord/roleStore.ts` keeps in KV.
  *
  * Colors are each team's well-known livery color. Audi and Cadillac are new
  * to the 2026 grid with no confirmed official livery yet at the time this was

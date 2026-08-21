@@ -4,7 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-F1 26 UDP telemetry capture, a live session dashboard, and a Discord bot.
+F1 26 UDP telemetry capture, a live session dashboard, a Discord bot, and a
+Discord-backed OIDC wrapper that fronts the site with Cloudflare Access.
 
 | Component | Runs on | Path | Language |
 |---|---|---|---|
@@ -12,13 +13,15 @@ F1 26 UDP telemetry capture, a live session dashboard, and a Discord bot.
 | Database schema | Local Docker (TimescaleDB / Postgres 16) | `schema/` | SQL |
 | Live dashboard | Cloudflare Workers | `web/` | TypeScript (Hono) |
 | Discord bot | Cloudflare Workers | `bot/` | TypeScript (Hono) |
+| Access OIDC wrapper | Cloudflare Workers | `auth/` | TypeScript (Hono) |
 | Shared DB layer | npm workspace (`@f1/db`) | `packages/db/` | TypeScript |
 
 The listener captures UDP telemetry from the game and writes it to a local
-PostgreSQL/TimescaleDB instance. Both Workers read that same database through
-Hyperdrive over a Cloudflare Tunnel (see `DEPLOYMENT.md` for the tunnel/VPC
-service/TLS setup — that part is infrastructure, not app code, and rarely
-needs touching).
+PostgreSQL/TimescaleDB instance. `web` and `bot` read that same database
+through Hyperdrive over a Cloudflare Tunnel (see `DEPLOYMENT.md` for the
+tunnel/VPC service/TLS setup — that part is infrastructure, not app code, and
+rarely needs touching). `auth` talks only to Discord and Access; it has no
+database binding.
 
 **UDP format is 2026-only.** `packets/packet_header.py::validate_packet_header`
 rejects anything where `packet_format != 2026` or `game_year != 26`. There is
@@ -32,7 +35,7 @@ no F1 25 back-compat and none is planned — don't add dual-format branching.
 cd listener
 source .venv/bin/activate        # venv already exists in the repo
 
-pytest                           # full suite (~247 tests)
+pytest                           # full suite (~250 tests)
 pytest tests/test_dispatcher.py  # single file
 pytest tests/test_dispatcher.py::test_name  # single test
 pytest -k car_frame              # by keyword
@@ -55,20 +58,29 @@ the withheld-data paths are covered end to end. `tests/factories.py` builds the
 real packet dataclasses for service tests — use it rather than hand-rolled
 `SimpleNamespace` stand-ins, which silently drift from the parsers.
 
-### Web dashboard / Discord bot (TypeScript, `web/`, `bot/`, `packages/db/`)
+### Workers and shared package (TypeScript: `web/`, `bot/`, `auth/`, `packages/db/`)
 
-npm workspaces — run `npm install` at the repo root. Same scripts in all
-three packages (`packages/db` has no dev/deploy):
+npm workspaces — run `npm install` at the repo root. Same scripts in all four
+(`packages/db` has no dev/deploy):
 
 ```bash
 npm run dev         # wrangler dev
 npm test            # vitest run
 npm run typecheck   # tsc --noEmit
-npm run deploy      # wrangler deploy
+npm run deploy      # wrangler deploy — see below, not the normal path
 ```
 
-Both use `@cloudflare/vitest-pool-workers`, so tests run inside the actual
-Workers runtime, not Node.
+From the repo root, `npm test --workspaces` / `npm run typecheck --workspaces`
+run all four; `--workspace=bot` picks one.
+
+The three Workers use `@cloudflare/vitest-pool-workers`, so their tests run
+inside the actual Workers runtime; `packages/db` is plain vitest on Node.
+
+**Deploys happen on push to `master`** via Workers Builds (one build
+connection per Worker, scoped by root directory). `npm run deploy` exists but
+running it by hand is not the normal path.
+
+`web`'s source is in `worker/`, not `src/` — `bot` and `auth` use `src/`.
 
 ### Local stack (Postgres + listener)
 
@@ -80,6 +92,12 @@ docker compose up -d
 `listener` container runs `schema/run_schema.py` (applies SQL in FK order)
 then `main.py` on startup. Postgres is published on host port 7005, UDP
 listener on 20777→9999.
+
+Compose pulls the listener image published to GHCR by
+`.github/workflows/listener-image.yml` (any push to `master` touching
+`listener/` or `schema/` rebuilds it). **Local listener changes need
+`docker compose up -d --build`** — a plain `up -d` runs the last published
+image, not your working tree. `LISTENER_IMAGE` overrides the tag.
 
 ## Architecture
 
@@ -161,9 +179,10 @@ patch outright — an integer column stores anything the game sends.
 ### Schema (`schema/`)
 
 `schema/run_schema.py` applies `.sql` files in explicit FK-dependency order
-(`SCHEMA_EXECUTION_ORDER`) — `identity.users` first, then `telemetry.*`
-tables. When adding a table with a new FK dependency, add it to that list in
-dependency order, don't rely on filename sorting.
+(`SCHEMA_EXECUTION_ORDER`) — `identity.*` first, then `telemetry.*`, then
+`bot.*` (the bot's Discord bookkeeping: `discord_weekends`,
+`discord_session_messages`). When adding a table with a new FK dependency, add
+it to that list in dependency order, don't rely on filename sorting.
 
 No database has been deployed yet, so **there is no migration path and none is
 wanted**: each `.sql` file is the whole current definition of its table. Change
@@ -194,9 +213,9 @@ the table — the whole history, on every call. `sessions.session_start_utc` is
 always available as the lower bound; `RepositoryBase._delete_frames_after` shows
 the pattern for the flashback DELETEs.
 
-### Web / bot Workers
+### Workers
 
-Both are thin Hono apps sharing `packages/db` (`@f1/db`): connection setup,
+`web` and `bot` are thin Hono apps sharing `packages/db` (`@f1/db`): connection setup,
 typed row models for every telemetry table, enum types mirroring
 `listener/enums/`, and the schema health probe. `connect()` uses the
 `HYPERDRIVE` binding (`postgres` npm package, `fetch_types: false` since
@@ -207,10 +226,17 @@ Hyperdrive caching itself
 is disabled project-wide (see `DEPLOYMENT.md`) because the live view needs
 fresh car positions on every poll, not cached rows.
 
-Each Worker keeps its SQL in `queries/` (web: sessions, entries, timeline;
-bot: sessions, entries, drivers, laps, results). The query layers are tested
-and typed against the F1 26 schema; the dashboard UI is the current work in
-progress.
+Each keeps its SQL in `queries/`, one file per subject area — `web/worker/queries/`
+(sessions, timeline, tracks, entries, `live` for the leaderboard, `feed` for the
+race-director stream) and `bot/src/queries/` (sessions, timeline, tracks, entries,
+drivers, laps, results, `discordState` for the `bot.*` tables). Query layers are
+tested and typed against the F1 26 schema.
+
+The dashboard is one server-rendered page: `web/worker/dashboard.ts` emits the
+whole document, which then polls `GET /api/live`. A session counts as live only
+while `session_timeline` is still being written — `LIVE_THRESHOLD_MS` (60s) in
+`web/worker/index.ts`, mirrored by `STALE_THRESHOLD_MS` in `bot/src/index.ts`;
+change one and change the other.
 
 `bot` is served from a path-scoped Workers Route (`f1.crunchypancake.com/bot*`)
 rather than its own subdomain, sharing the hostname with `web` and `auth`.
@@ -228,3 +254,23 @@ cron tick re-registers the set with Discord whenever its hash changes, and
 `dispatchInteraction` routes to it. **Anything that queries Postgres must set
 `deferred: true`**: Discord fails an interaction with no response inside 3s,
 which Hyperdrive-over-tunnel does not reliably beat.
+
+**Discord bookkeeping lives in KV (`BOT_STATE`), not Postgres** — the team-role
+map (`discord/roleStore.ts`) and the registered-command fingerprint
+(`discord/commands.ts`). It is small, slow-moving, and unrelated to telemetry;
+clearing the namespace just makes the next tick rebuild both. The per-weekend
+channel and message ids do belong in Postgres (`bot.*`), since they join against
+sessions.
+
+The cron tick runs each piece through `step()`, which logs a failure instead of
+propagating it. The pieces are independent, and one try/catch around the whole
+tick meant the first thrower silently cancelled the rest — a missing table in
+the role step once took session cards down with it.
+
+`auth` is a standalone OIDC provider that lets Cloudflare Access authenticate
+against Discord: Access redirects to `/auth/authorize`, `auth` bounces the user
+through Discord OAuth, checks guild membership, and mints an ES256 id token
+(`jose`, key in the Secrets Store). It shares no code with `web`/`bot` — no
+`@f1/db`, no `nodejs_compat`, no database — so treat it as a separate app that
+happens to live in the same repo. `DISCORD_GUILD_ID` is duplicated in
+`auth/wrangler.jsonc` and `bot/wrangler.jsonc` and must match.

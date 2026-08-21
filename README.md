@@ -2,7 +2,8 @@
 
 Live telemetry pipeline for EA SPORTS F1 26: a Python listener captures the
 game's UDP telemetry stream into TimescaleDB, and Cloudflare Workers serve a
-live session dashboard and a Discord bot on top of that data.
+live session dashboard and a Discord bot on top of that data, behind a
+Discord-backed single sign-on.
 
 ```
 F1 26 (UDP :20777)
@@ -16,6 +17,8 @@ F1 26 (UDP :20777)
                                               │   web/    │ │   bot/   │
                                               │ dashboard │ │ Discord  │
                                               └───────────┘ └──────────┘
+                                                    ▲
+                                     Cloudflare Access ─── auth/ (Discord OIDC)
 ```
 
 | Component | Path | Stack | Runs on |
@@ -24,6 +27,7 @@ F1 26 (UDP :20777)
 | Database schema | `schema/` | SQL (TimescaleDB / Postgres 16) | Local Docker |
 | Live dashboard | `web/` | TypeScript, Hono | Cloudflare Workers |
 | Discord bot | `bot/` | TypeScript, Hono | Cloudflare Workers |
+| Access OIDC wrapper | `auth/` | TypeScript, Hono, jose | Cloudflare Workers |
 | Shared DB layer | `packages/db/` | TypeScript (`@f1/db`) | npm workspace |
 
 ## How it works
@@ -53,10 +57,14 @@ The parts that took actual thought:
   `UNKNOWN_<value>` with a logged warning, and unseen team IDs are inserted
   on sight, so a game update never takes down collection mid-session.
 
-Both Workers reach the local database through a Cloudflare Tunnel + Workers
+`web` and `bot` reach the local database through a Cloudflare Tunnel + Workers
 VPC service + Hyperdrive, sharing typed row models and queries from
-`packages/db`. The Worker-side data layers are in place; the dashboard UI and
-bot commands are the current work in progress.
+`packages/db`. The dashboard renders a live leaderboard, track map, and
+race-director feed off a polling endpoint; the bot posts and finalizes a card
+per session into a per-weekend Discord channel on a one-minute cron, and serves
+slash commands over signed interaction webhooks. `auth/` is a small OIDC
+provider that lets Cloudflare Access authenticate visitors against Discord
+guild membership — it touches no telemetry data.
 
 ## Running it
 
@@ -65,12 +73,14 @@ listener's host.
 
 ```bash
 cp .env.example .env        # set POSTGRES_PASSWORD
-docker compose up -d
+docker compose up -d        # add --build to run local listener changes
 ```
 
 This starts TimescaleDB (host port 7005) and the listener (UDP host port
-9999), which applies the schema on startup. Point the game's UDP telemetry at
-the host's IP, port 9999, format **2026**.
+9999), which applies the schema on startup. The listener image is published to
+GHCR by CI, so a plain `up -d` pulls the last released build — pass `--build`
+to run your working tree instead. Point the game's UDP telemetry at the host's
+IP, port 9999, format **2026**.
 
 See [DEPLOYMENT.md](DEPLOYMENT.md) for the Cloudflare side (tunnel, VPC
 service, Hyperdrive, TLS).
@@ -84,7 +94,7 @@ cd listener && source .venv/bin/activate
 pytest
 pyright
 
-# Workers + shared package (vitest, running inside the Workers runtime)
+# Workers (vitest inside the Workers runtime) + the shared package
 npm test --workspaces
 npm run typecheck --workspaces
 ```

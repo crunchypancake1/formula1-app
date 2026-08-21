@@ -8,8 +8,6 @@
   "workers_dev": false,
   "preview_urls": false,
 
-  // 1-minute is Cron Triggers' minimum granularity — the reason session
-  // cards are finalize-only rather than continuously re-edited.
   "triggers": {
     "crons": ["* * * * *"]
   },
@@ -19,9 +17,6 @@
     "DISCORD_CHANNEL_NAME": "active-session"
   },
 
-  // Discord bookkeeping that would be overkill in Postgres: the team-role map
-  // is twelve ids nothing joins against, so it lives here instead of behind
-  // Hyperdrive and the tunnel. See `src/discord/roleStore.ts`.
   "kv_namespaces": [
     {
       "binding": "BOT_STATE",
@@ -45,7 +40,9 @@
     }
   ],
 
-  "routes": [{ "pattern": "f1-bot.crunchypancake.com", "custom_domain": true }],
+  "routes": [
+    { "pattern": "f1.crunchypancake.com/bot", "zone_name": "crunchypancake.com" }
+  ],
 
   "observability": {
     "logs": { "enabled": true, "invocation_logs": true }

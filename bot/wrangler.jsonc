@@ -9,7 +9,9 @@
   "preview_urls": false,
 
   "triggers": {
-    "crons": ["* * * * *"]
+    // Second entry is the hourly team-role reconciliation branch in
+    // `src/index.ts`'s `scheduled()` — everything else runs every minute.
+    "crons": ["* * * * *", "0 * * * *"]
   },
 
   "vars": {

@@ -5,6 +5,7 @@ import { finalCardFor, placeholderCard } from "./discord/cards";
 import { COMMANDS, COMPONENTS, ensureCommands } from "./discord/commands";
 import { dispatchEvent, type WebhookEvent } from "./discord/events";
 import { dispatchInteraction, type Interaction } from "./discord/interactions";
+import { syncMembers } from "./discord/memberStore";
 import { ensureTeamRoles } from "./discord/roleStore";
 import { verifyRequestHeaders } from "./discord/verify";
 import type { BotEnv } from "./env";
@@ -223,23 +224,41 @@ async function step(name: string, run: () => Promise<void>): Promise<void> {
   }
 }
 
-async function tick(env: BotEnv): Promise<void> {
-  let token: string;
+/** Read once per tick and shared by both the per-minute and hourly branches below. */
+async function readBotToken(env: BotEnv): Promise<string | null> {
   try {
-    token = await env.DISCORD_BOT_TOKEN.get();
+    return await env.DISCORD_BOT_TOKEN.get();
   } catch (e) {
-    // Without a token every step below is a guaranteed 401, so this one
-    // failure really does end the tick.
     console.error("tick could not read DISCORD_BOT_TOKEN:", e);
-    return;
+    return null;
   }
+}
+
+/**
+ * Reconciles team roles against the guild. Roles change only when someone
+ * edits the guild by hand, so this runs on its own hourly cron branch rather
+ * than every minute — see `ensureTeamRoles` for why no caching is needed
+ * in between.
+ */
+async function hourlyTick(env: BotEnv): Promise<void> {
+  const token = await readBotToken(env);
+  if (!token) return;
 
   await step("teamRoles", async () => {
-    await ensureTeamRoles(env.BOT_STATE, token, env.DISCORD_GUILD_ID);
+    await ensureTeamRoles(token, env.DISCORD_GUILD_ID);
   });
+}
+
+async function tick(env: BotEnv): Promise<void> {
+  const token = await readBotToken(env);
+  if (!token) return;
 
   await step("commands", async () => {
     await ensureCommands(env.BOT_STATE, token, env.DISCORD_GUILD_ID);
+  });
+
+  await step("members", async () => {
+    await syncMembers(env.BOT_STATE, token, env.DISCORD_GUILD_ID);
   });
 
   const sql = connect(env);
@@ -258,9 +277,12 @@ async function tick(env: BotEnv): Promise<void> {
   }
 }
 
+/** Matches the second entry in `wrangler.jsonc`'s `triggers.crons` — everything else is the per-minute tick. */
+const HOURLY_CRON = "0 * * * *";
+
 export default {
   fetch: app.fetch,
-  scheduled(_event, env, ctx) {
-    ctx.waitUntil(tick(env));
+  scheduled(event, env, ctx) {
+    ctx.waitUntil(event.cron === HOURLY_CRON ? hourlyTick(env) : tick(env));
   },
 } satisfies ExportedHandler<BotEnv>;

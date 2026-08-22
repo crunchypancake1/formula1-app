@@ -26,6 +26,13 @@ export interface DiscordRole {
   color: number;
 }
 
+export interface DiscordMember {
+  user: { id: string; username: string; global_name: string | null; avatar: string | null };
+  nick: string | null;
+  roles: string[];
+  joined_at: string;
+}
+
 class DiscordApiError extends Error {
   constructor(method: string, path: string, status: number, body: string) {
     super(`Discord API ${method} ${path} -> ${status}: ${body}`);
@@ -78,6 +85,31 @@ export function editChannel(
 
 export function listRoles(token: string, guildId: string): Promise<DiscordRole[]> {
   return discordFetch<DiscordRole[]>(token, "GET", `/guilds/${guildId}/roles`);
+}
+
+const MEMBER_PAGE_SIZE = 1000;
+
+/**
+ * Pages through the full roster via `after`-cursor pagination — a page
+ * shorter than the page size is how the REST API signals the last one, there
+ * being no separate "has more" field.
+ */
+export async function listMembers(token: string, guildId: string): Promise<DiscordMember[]> {
+  const members: DiscordMember[] = [];
+  let after = "0";
+
+  for (;;) {
+    const page = await discordFetch<DiscordMember[]>(
+      token,
+      "GET",
+      `/guilds/${guildId}/members?limit=${MEMBER_PAGE_SIZE}&after=${after}`
+    );
+    members.push(...page);
+    if (page.length < MEMBER_PAGE_SIZE) break;
+    after = page[page.length - 1].user.id;
+  }
+
+  return members;
 }
 
 export function createRole(

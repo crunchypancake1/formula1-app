@@ -275,7 +275,6 @@ through Discord OAuth, checks guild membership, and mints an ES256 id token
 happens to live in the same repo. It does share `bot`'s `BOT_STATE` KV
 namespace binding, read-only: `auth/src/members.ts` checks membership against
 the roster `bot`'s cron tick snapshots there (`bot/src/discord/memberStore.ts`)
-rather than calling Discord itself, so `auth` holds no bot token. That trades
-Discord-call latency for up to ~1 minute of staleness on who counts as a
-member — accepted here since guild membership rarely changes and nobody gets
-kicked.
+rather than calling Discord itself, so `auth` holds no bot token. Membership
+checks are therefore only as fresh as the last cron tick (up to ~1 minute),
+not live.

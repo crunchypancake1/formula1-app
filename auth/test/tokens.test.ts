@@ -18,19 +18,19 @@ function secret(value: string): SecretsStoreSecret {
 let env: AuthEnv;
 
 beforeAll(async () => {
-  const { privateKey } = await generateKeyPair("RS256", { extractable: true });
+  const { privateKey } = await generateKeyPair("ES256", { extractable: true });
   const pem = await exportPKCS8(privateKey);
 
   env = {
-    DISCORD_GUILD_ID: "guild",
     DISCORD_OAUTH_CLIENT_ID: "discord-client",
     ACCESS_CLIENT_ID: "access-client",
     ACCESS_TEAM_DOMAIN: "team.cloudflareaccess.com",
     OIDC_ISSUER: "https://f1.crunchypancake.com/auth",
-    DISCORD_BOT_TOKEN: secret("bot-token"),
     DISCORD_OAUTH_CLIENT_SECRET: secret("discord-secret"),
     ACCESS_CLIENT_SECRET: secret("access-secret"),
     OIDC_SIGNING_KEY: secret(pem),
+    // Unused by tokens.ts — AuthEnv just requires the field.
+    BOT_STATE: {} as KVNamespace,
   };
 });
 
@@ -98,13 +98,12 @@ describe("getJwks", () => {
     const jwks = await getJwks(env);
     expect(jwks.keys).toHaveLength(1);
     const key = jwks.keys[0];
-    expect(key.kty).toBe("RSA");
-    expect(key.n).toBeTruthy();
-    expect(key.e).toBeTruthy();
-    expect(key.alg).toBe("RS256");
+    expect(key.kty).toBe("EC");
+    expect(key.crv).toBe("P-256");
+    expect(key.x).toBeTruthy();
+    expect(key.y).toBeTruthy();
+    expect(key.alg).toBe("ES256");
     expect(key.use).toBe("sig");
-    for (const field of ["d", "p", "q", "dp", "dq", "qi"]) {
-      expect(key).not.toHaveProperty(field);
-    }
+    expect(key).not.toHaveProperty("d");
   });
 });

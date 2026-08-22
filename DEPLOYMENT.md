@@ -85,12 +85,13 @@ listed if the database schema is stale.
 
 ### Bot Discord session cards
 
-`formula1-bot` runs a 1-minute Cron Trigger (`bot/wrangler.jsonc`'s
-`triggers.crons`) that posts and finalizes race-weekend session cards into a
-Discord channel. It needs:
+`formula1-bot` runs two Cron Triggers (`bot/wrangler.jsonc`'s
+`triggers.crons`): `* * * * *` posts and finalizes race-weekend session cards,
+registers slash commands, and snapshots the guild roster to KV every minute;
+`0 * * * *` reconciles team roles once an hour (`src/index.ts`'s `scheduled()`
+branches on `event.cron` to tell them apart). It needs:
 
 - `DISCORD_GUILD_ID` (`vars` in `bot/wrangler.jsonc`) — the target server's id.
-  Must match `auth/wrangler.jsonc`'s.
 - `DISCORD_CHANNEL_NAME` (`vars`, defaults to `active-session`) — the channel
   the bot creates/reuses for the current weekend.
 - `DISCORD_ARCHIVE_CATEGORY_ID` (optional `vars`, unset by default) — a
@@ -108,10 +109,15 @@ Discord channel. It needs:
   identifies the app, so `currentApplicationId` reads it from
   `GET /applications/@me` when a command sync actually happens, and inbound
   interactions carry it in their payload.
-- `BOT_STATE` — the KV namespace above. Holds the team-role map the bot
-  builds on its first tick (`bot/src/discord/roleStore.ts`) and the fingerprint
-  of the last-registered command set (`bot/src/discord/commands.ts`); deleting
-  the namespace's contents just makes the next tick rebuild both.
+- `BOT_STATE` — the KV namespace above. Holds the fingerprint of the
+  last-registered command set (`bot/src/discord/commands.ts`) and the guild
+  roster snapshot (`bot/src/discord/memberStore.ts`, key `members:v1`) that
+  `formula1-auth` also reads to check membership at login — see below. Team
+  roles are **not** cached here: `bot/src/discord/roleStore.ts` re-lists the
+  guild live on every hourly reconciliation, since `GET` on the role list is
+  cheap and roles change only when someone edits the guild by hand. Deleting
+  the namespace's contents just makes the next tick rebuild the command
+  fingerprint and roster.
 
 `Manage Roles` is what lets the bot create the per-team roles, and the bot's
 own highest role has to sit **above** the roles it manages in the guild's role
@@ -172,8 +178,11 @@ persistent to manage. Interactions arrive as ordinary HTTP requests.
 
 `formula1-auth` lets Cloudflare Access use Discord server membership as an
 identity provider for `f1.crunchypancake.com`. It runs the Discord OAuth
-dance, checks guild membership via the same bot token as `formula1-bot`,
-then mints its own signed JWT (`RS256`) that Access consumes as an OIDC
+dance, checks guild membership against the roster `formula1-bot`'s cron tick
+snapshots into the shared `BOT_STATE` KV namespace (`src/members.ts`, key
+`members:v1` — no bot token or Discord API call needed here; up to ~1 minute
+stale, which is an accepted tradeoff for a small, trusted membership), then
+mints its own signed JWT (`ES256`) that Access consumes as an OIDC
 `id_token`. It never touches the database — no Hyperdrive binding.
 
 It's deployed via a path-scoped **Route**
@@ -182,28 +191,31 @@ It's deployed via a path-scoped **Route**
 the same hostname, the same "same hostname, different Worker on a sub-path"
 pattern already used for `crunchypancake.com/mcp` (linkwarden).
 
+It also needs a `BOT_STATE` binding — the same KV namespace id as `formula1-bot`'s
+(`kv_namespaces` in `auth/wrangler.jsonc`), read-only from this Worker's side;
+`formula1-bot`'s cron tick owns the writes.
+
 Secrets (Secrets Store, same store as the table above):
 
 | Secret name | Purpose | Create with |
 |---|---|---|
-| `discord-bot-token` | Guild-membership lookups — reuses the bot's existing token, read-only here | *(already exists, see bot setup above)* |
 | `discord-oauth-client-secret` | Discord OAuth2 code exchange | `npx wrangler secrets-store secret create d947ac5bb8ef4800ac46fc59128a1a09 --name discord-oauth-client-secret --scopes workers` |
 | `access-client-secret` | Value Access is configured with; `/auth/token` checks incoming requests against it (we invent this string, Access doesn't issue it) | same command, `--name access-client-secret` |
-| `oidc-signing-key` | RSA (RS256) PKCS8 private key PEM, signs the id_token plus the two internal-only relay-state/auth-code JWTs | same command, `--name oidc-signing-key` |
+| `oidc-signing-key` | EC (ES256, P-256) PKCS8 private key PEM, signs the id_token plus the two internal-only relay-state/auth-code JWTs | same command, `--name oidc-signing-key` |
 
 Manual setup, in order (later steps need values from earlier ones):
 
-1. Generate an RSA keypair (e.g. `jose.generateKeyPair("RS256")` in a
-   throwaway script, or `openssl genrsa` + `openssl pkcs8`); store the
-   PKCS8 private key PEM as `oidc-signing-key`.
+1. Generate an EC (P-256) keypair (e.g. `jose.generateKeyPair("ES256")` in a
+   throwaway script, or `openssl ecparam -name prime256v1 -genkey` +
+   `openssl pkcs8`); store the PKCS8 private key PEM as `oidc-signing-key`.
+   An RSA key will fail to import — `tokens.ts` hardcodes `ES256`.
 2. Invent two arbitrary strings for `ACCESS_CLIENT_ID` /
    `access-client-secret`. Put the client ID in `auth/wrangler.jsonc`'s
    `vars.ACCESS_CLIENT_ID`, the secret in the Secrets Store.
 3. Discord Developer Portal → the bot's application → OAuth2 tab → add
    redirect URI `https://f1.crunchypancake.com/auth/callback` → copy the
    OAuth2 Client ID into `vars.DISCORD_OAUTH_CLIENT_ID`, the Client Secret
-   into `discord-oauth-client-secret`. `vars.DISCORD_GUILD_ID` should match
-   the bot's `DISCORD_GUILD_ID`.
+   into `discord-oauth-client-secret`.
 4. Deploy `auth/` (`npm run deploy` from `auth/`) so the endpoints exist.
 5. Cloudflare Zero Trust → Settings → Authentication → Add identity
    provider → OpenID Connect: Auth URL

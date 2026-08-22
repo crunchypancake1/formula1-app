@@ -9,15 +9,22 @@
   "preview_urls": false,
 
   "vars": {
-    "DISCORD_GUILD_ID": "1301861026844643409",
     "DISCORD_OAUTH_CLIENT_ID": "1277757746460233818",
     "ACCESS_CLIENT_ID": "836727f24aa515f8df5981dabb1bd0801ce00970e75625ae2334c16296a21ae5",
     "ACCESS_TEAM_DOMAIN": "crunchypancake.cloudflareaccess.com",
     "OIDC_ISSUER": "https://f1.crunchypancake.com/auth"
   },
 
+  // Same namespace as bot/wrangler.jsonc's BOT_STATE — read-only here, for
+  // the guild-member snapshot bot's cron tick writes (see src/members.ts).
+  "kv_namespaces": [
+    {
+      "binding": "BOT_STATE",
+      "id": "f95fefa1c9e245daaa8ed60a9230579b"
+    }
+  ],
+
   "secrets_store_secrets": [
-    { "binding": "DISCORD_BOT_TOKEN", "store_id": "d947ac5bb8ef4800ac46fc59128a1a09", "secret_name": "discord-bot-token" },
     { "binding": "DISCORD_OAUTH_CLIENT_SECRET", "store_id": "d947ac5bb8ef4800ac46fc59128a1a09", "secret_name": "discord-oauth-client-secret" },
     { "binding": "ACCESS_CLIENT_SECRET", "store_id": "d947ac5bb8ef4800ac46fc59128a1a09", "secret_name": "access-client-secret" },
     { "binding": "OIDC_SIGNING_KEY", "store_id": "d947ac5bb8ef4800ac46fc59128a1a09", "secret_name": "oidc-signing-key" }

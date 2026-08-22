@@ -17,10 +17,6 @@ interface DiscordTokenResponse {
   access_token: string;
 }
 
-interface DiscordGuildMember {
-  user: { id: string };
-}
-
 class DiscordApiError extends Error {
   constructor(method: string, path: string, status: number, body: string) {
     super(`Discord API ${method} ${path} -> ${status}: ${body}`);
@@ -64,30 +60,6 @@ export async function getDiscordUser(accessToken: string): Promise<DiscordUser> 
   }
 
   return (await res.json()) as DiscordUser;
-}
-
-/** 404 (not a member) is the only branch the callback route needs — returns `null`, not a thrown error. */
-export async function getGuildMember(
-  botToken: string,
-  guildId: string,
-  userId: string
-): Promise<DiscordGuildMember | null> {
-  const res = await fetch(`${API_BASE}/guilds/${guildId}/members/${userId}`, {
-    headers: { Authorization: `Bot ${botToken}` },
-  });
-
-  if (res.status === 404) return null;
-
-  if (!res.ok) {
-    throw new DiscordApiError(
-      "GET",
-      `/guilds/${guildId}/members/${userId}`,
-      res.status,
-      await res.text()
-    );
-  }
-
-  return (await res.json()) as DiscordGuildMember;
 }
 
 export function discordAvatarUrl(user: DiscordUser): string | null {

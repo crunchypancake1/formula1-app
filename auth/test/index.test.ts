@@ -8,22 +8,26 @@ function secret(value: string): SecretsStoreSecret {
   return { get: async () => value };
 }
 
+/** Stands in for the shared `BOT_STATE` KV namespace `bot`'s cron tick writes `members:v1` to. */
+function membersKv(ids: string[]): KVNamespace {
+  return { get: async () => ({ members: ids.map((id) => ({ id })) }) } as unknown as KVNamespace;
+}
+
 let env: AuthEnv;
 
 beforeAll(async () => {
-  const { privateKey } = await generateKeyPair("RS256", { extractable: true });
+  const { privateKey } = await generateKeyPair("ES256", { extractable: true });
   const pem = await exportPKCS8(privateKey);
 
   env = {
-    DISCORD_GUILD_ID: "guild-1",
     DISCORD_OAUTH_CLIENT_ID: "discord-client",
     ACCESS_CLIENT_ID: "access-client",
     ACCESS_TEAM_DOMAIN: "team.cloudflareaccess.com",
     OIDC_ISSUER: "https://f1.crunchypancake.com/auth",
-    DISCORD_BOT_TOKEN: secret("bot-token"),
     DISCORD_OAUTH_CLIENT_SECRET: secret("discord-secret"),
     ACCESS_CLIENT_SECRET: secret("access-secret"),
     OIDC_SIGNING_KEY: secret(pem),
+    BOT_STATE: membersKv([]),
   };
 });
 
@@ -40,7 +44,7 @@ describe("discovery document", () => {
     expect(body.authorization_endpoint).toBe(`${env.OIDC_ISSUER}/authorize`);
     expect(body.token_endpoint).toBe(`${env.OIDC_ISSUER}/token`);
     expect(body.jwks_uri).toBe(`${env.OIDC_ISSUER}/jwks`);
-    expect(body.id_token_signing_alg_values_supported).toEqual(["RS256"]);
+    expect(body.id_token_signing_alg_values_supported).toEqual(["ES256"]);
   });
 });
 
@@ -99,14 +103,15 @@ describe("GET /auth/callback", () => {
             { status: 200 }
           );
         }
-        if (url.includes("/guilds/guild-1/members/42")) {
-          return new Response(JSON.stringify({ user: { id: "42" } }), { status: 200 });
-        }
         throw new Error(`unexpected fetch to ${url}`);
       })
     );
 
-    const res = await app.request(`/auth/callback?code=discord-code&state=${state}`, {}, env);
+    const res = await app.request(
+      `/auth/callback?code=discord-code&state=${state}`,
+      {},
+      { ...env, BOT_STATE: membersKv(["42"]) }
+    );
     expect(res.status).toBe(302);
     const location = new URL(res.headers.get("location")!);
     expect(location.origin + location.pathname).toBe(relayRedirect);
@@ -128,14 +133,15 @@ describe("GET /auth/callback", () => {
             status: 200,
           });
         }
-        if (url.includes("/guilds/guild-1/members/42")) {
-          return new Response("not found", { status: 404 });
-        }
         throw new Error(`unexpected fetch to ${url}`);
       })
     );
 
-    const res = await app.request(`/auth/callback?code=discord-code&state=${state}`, {}, env);
+    const res = await app.request(
+      `/auth/callback?code=discord-code&state=${state}`,
+      {},
+      { ...env, BOT_STATE: membersKv([]) }
+    );
     expect(res.status).toBe(403);
   });
 });
@@ -191,11 +197,11 @@ describe("POST /auth/token", () => {
 });
 
 describe("GET /auth/jwks", () => {
-  it("returns a single RSA public key", async () => {
+  it("returns a single EC public key", async () => {
     const res = await app.request("/auth/jwks", {}, env);
     expect(res.status).toBe(200);
     const body = (await res.json()) as { keys: Array<Record<string, unknown>> };
     expect(body.keys).toHaveLength(1);
-    expect(body.keys[0].kty).toBe("RSA");
+    expect(body.keys[0].kty).toBe("EC");
   });
 });

@@ -1,10 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  discordAvatarUrl,
-  exchangeDiscordCode,
-  getDiscordUser,
-  getGuildMember,
-} from "../src/discord";
+import { discordAvatarUrl, exchangeDiscordCode, getDiscordUser } from "../src/discord";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -56,34 +51,6 @@ describe("getDiscordUser", () => {
 
     const user = await getDiscordUser("at-123");
     expect(user.username).toBe("driver");
-  });
-});
-
-describe("getGuildMember", () => {
-  it("returns the member on 200", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response(JSON.stringify({ user: { id: "1" } }), { status: 200 }))
-    );
-    const member = await getGuildMember("bot-token", "guild-1", "1");
-    expect(member?.user.id).toBe("1");
-  });
-
-  it("returns null on 404", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response("not found", { status: 404 }))
-    );
-    const member = await getGuildMember("bot-token", "guild-1", "1");
-    expect(member).toBeNull();
-  });
-
-  it("throws on other non-2xx statuses", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response("server error", { status: 500 }))
-    );
-    await expect(getGuildMember("bot-token", "guild-1", "1")).rejects.toThrow();
   });
 });
 

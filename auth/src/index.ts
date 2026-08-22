@@ -1,11 +1,7 @@
 import { Hono } from "hono";
-import {
-  discordAvatarUrl,
-  exchangeDiscordCode,
-  getDiscordUser,
-  getGuildMember,
-} from "./discord";
+import { discordAvatarUrl, exchangeDiscordCode, getDiscordUser } from "./discord";
 import type { AuthEnv } from "./env";
+import { isGuildMember } from "./members";
 import {
   getJwks,
   signAuthCode,
@@ -82,9 +78,7 @@ app.get("/auth/callback", async (c) => {
 
   const discordUser = await getDiscordUser(access_token);
 
-  const botToken = await c.env.DISCORD_BOT_TOKEN.get();
-  const member = await getGuildMember(botToken, c.env.DISCORD_GUILD_ID, discordUser.id);
-  if (!member) {
+  if (!(await isGuildMember(c.env.BOT_STATE, discordUser.id))) {
     return c.text("You are not a member of the required Discord server.", 403);
   }
 

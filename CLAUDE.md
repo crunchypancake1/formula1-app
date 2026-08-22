@@ -272,5 +272,10 @@ against Discord: Access redirects to `/auth/authorize`, `auth` bounces the user
 through Discord OAuth, checks guild membership, and mints an ES256 id token
 (`jose`, key in the Secrets Store). It shares no code with `web`/`bot` — no
 `@f1/db`, no `nodejs_compat`, no database — so treat it as a separate app that
-happens to live in the same repo. `DISCORD_GUILD_ID` is duplicated in
-`auth/wrangler.jsonc` and `bot/wrangler.jsonc` and must match.
+happens to live in the same repo. It does share `bot`'s `BOT_STATE` KV
+namespace binding, read-only: `auth/src/members.ts` checks membership against
+the roster `bot`'s cron tick snapshots there (`bot/src/discord/memberStore.ts`)
+rather than calling Discord itself, so `auth` holds no bot token. That trades
+Discord-call latency for up to ~1 minute of staleness on who counts as a
+member — accepted here since guild membership rarely changes and nobody gets
+kicked.

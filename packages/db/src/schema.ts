@@ -439,6 +439,92 @@ export interface LiveDriver
 }
 
 // ---------------------------------------------------------------------------
+// telemetry — personal view (/me)
+// ---------------------------------------------------------------------------
+
+/**
+ * The viewer's own latest telemetry.car_frame row, joined to the cars at
+ * position ± 1 for the battle panel. `ahead_*`/`behind_*` fields are null
+ * when the viewer holds P1 or last place respectively.
+ */
+export interface PersonalFrameRow {
+  user_id: number;
+  car_index: number;
+  driver_name: string;
+  team_name: string;
+  team_display_name: string;
+  race_number: number;
+
+  position: number | null;
+  current_lap_num: number | null;
+  gap_to_car_ahead_ms: number | null;
+  gap_to_car_behind_ms: number | null;
+
+  /** The 2026 Boost — replaced fixed DRS zones with an on-demand overtaking aid. */
+  overtake_available: boolean | null;
+  overtake_active: boolean | null;
+
+  /** Raw enum codes — see `*_CODES` in ./enums. */
+  actual_tyre_compound: number | null;
+  visual_tyre_compound: number | null;
+  tyres_age_laps: number | null;
+
+  ahead_driver_name: string | null;
+  ahead_team_name: string | null;
+  /** Raw VisualTyreCompound code. */
+  ahead_visual_tyre_compound: number | null;
+  ahead_tyres_age_laps: number | null;
+
+  behind_driver_name: string | null;
+  behind_team_name: string | null;
+  /** Raw VisualTyreCompound code. */
+  behind_visual_tyre_compound: number | null;
+  behind_tyres_age_laps: number | null;
+}
+
+/** A `PersonalFrameRow` with its enum codes resolved to member names. */
+export interface PersonalFrame
+  extends Omit<
+    PersonalFrameRow,
+    "actual_tyre_compound" | "visual_tyre_compound" | "ahead_visual_tyre_compound" | "behind_visual_tyre_compound"
+  > {
+  actual_tyre_compound: ActualTyreCompound | null;
+  visual_tyre_compound: VisualTyreCompound | null;
+  ahead_visual_tyre_compound: VisualTyreCompound | null;
+  behind_visual_tyre_compound: VisualTyreCompound | null;
+}
+
+/**
+ * telemetry.car_frame_damage, narrowed to the per-corner tyre wear the
+ * personal view's "tyres now" panel renders. Absent entirely (not a row of
+ * nulls) when the viewer's Your Telemetry setting is Restricted.
+ */
+export interface CarDamageRow {
+  tyres_wear_rl: number | null;
+  tyres_wear_rr: number | null;
+  tyres_wear_fl: number | null;
+  tyres_wear_fr: number | null;
+}
+
+/**
+ * telemetry.tyre_sets — one row per available set in the viewer's newest
+ * per-lap snapshot. Empty (not zeroed) when Your Telemetry is Restricted or
+ * no snapshot has arrived yet; `personal.ts`'s query distinguishes those via
+ * `telemetry.entries.telemetry_public`.
+ */
+export interface TyreSetRow {
+  lap_number: number;
+  set_index: number;
+  actual_compound: ActualTyreCompound;
+  visual_compound: VisualTyreCompound;
+  wear: number;
+  life_span: number;
+  usable_life: number;
+  lap_delta_time_ms: number;
+  fitted: boolean;
+}
+
+// ---------------------------------------------------------------------------
 // telemetry — race control feed sources
 // ---------------------------------------------------------------------------
 

@@ -238,6 +238,20 @@ while `session_timeline` is still being written — `LIVE_THRESHOLD_MS` (60s) in
 `web/worker/index.ts`, mirrored by `STALE_THRESHOLD_MS` in `bot/src/index.ts`;
 change one and change the other.
 
+`/me` is a second server-rendered page (`web/worker/personalView.ts`, polling
+`GET /api/me`) for a signed-in driver's own race: who's ahead and behind, and
+their tyre sets. `web/worker/access.ts` reads the viewer's Discord id out of
+the Access JWT assertion's `custom.discord_id` claim (see `DEPLOYMENT.md` for
+the Cloudflare-side OIDC-claims configuration this depends on).
+`web/worker/matching.ts` fuzzy-matches that viewer against the live session's
+roster on every request — scoring both the Discord handle and the server
+nickname (from `bot`'s `BOT_STATE` KV roster) against each driver name — and
+`web/worker/viewer.ts` returns the confident winner or nothing. Nothing is
+persisted: there is no link stored anywhere, and `identity.users` is never
+written from `web`. A confident match just means the dashboard shows a
+"Your race →" button and `/me` renders that driver's data; anything short of
+confident means no button and no picker.
+
 `bot` is served from a path-scoped Workers Route (`f1.crunchypancake.com/bot*`)
 rather than its own subdomain, sharing the hostname with `web` and `auth`.
 **Routes with a path pattern don't strip the prefix**, so every handler path in

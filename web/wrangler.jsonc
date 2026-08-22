@@ -12,6 +12,22 @@
   "workers_dev": false,
   "preview_urls": false,
 
+  "vars": {
+    // https:// scheme included — jwtVerify's `issuer` check needs it, unlike
+    // auth's bare ACCESS_TEAM_DOMAIN (used there as a redirect-URI prefix).
+    "ACCESS_TEAM_DOMAIN": "https://crunchypancake.cloudflareaccess.com",
+    "ACCESS_POLICY_AUD": "329cad2e90546ed7e51fb3adf058b1ceb72e4f62f0d75f22e0b264a5712d8e50"
+  },
+
+  // Same namespace as bot/wrangler.jsonc's BOT_STATE — read-only here, for the
+  // guild-member snapshot bot's cron tick writes (bot/src/discord/memberStore.ts).
+  "kv_namespaces": [
+    {
+      "binding": "BOT_STATE",
+      "id": "f95fefa1c9e245daaa8ed60a9230579b"
+    }
+  ],
+
   "hyperdrive": [
     {
       "binding": "HYPERDRIVE",

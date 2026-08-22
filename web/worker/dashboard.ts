@@ -105,6 +105,12 @@ body {
 .stat { text-align: right; }
 .stat .value { font-size: 1.3rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 .stat .label { font-size: 0.68rem; color: var(--text-dim); letter-spacing: 0.06em; text-transform: uppercase; }
+.your-race-link {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  background: var(--panel-alt); border: 1px solid var(--border); color: var(--text);
+  padding: 0.45rem 0.8rem; border-radius: 6px; font-size: 0.82rem; font-weight: 600; text-decoration: none;
+}
+.your-race-link:hover { border-color: var(--accent); }
 
 .status-strip { display: flex; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 1rem; }
 .pill {
@@ -343,13 +349,14 @@ const SCRIPT = `
       stats += '<div class="stat"><div class="value" id="clock">' + formatClock(tl.session_time_left) +
         '</div><div class="label">Remaining</div></div>';
     }
+    var yourRace = data.you ? '<a class="your-race-link" href="/me">Your race →</a>' : "";
     return '<div class="header">' +
       '<div class="header-left">' +
         '<div><span class="live-badge"><span class="dot"></span>LIVE</span></div>' +
         '<div><div class="session-type">' + escapeHtml(sessionLabel) + '</div>' +
         '<div class="track-line">' + escapeHtml(trackLabel) + '</div></div>' +
       '</div>' +
-      '<div class="header-right">' + stats + '</div>' +
+      '<div class="header-right">' + stats + yourRace + '</div>' +
     '</div>';
   }
 

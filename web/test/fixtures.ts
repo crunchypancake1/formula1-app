@@ -1,4 +1,11 @@
-import type { RosterEntry, SessionRow, SessionTimelineRow } from "@f1/db";
+import type {
+  CarDamageRow,
+  PersonalFrameRow,
+  RosterEntry,
+  SessionRow,
+  SessionTimelineRow,
+  TyreSetRow,
+} from "@f1/db";
 
 /**
  * Partial builders. The row types mirror every column in `schema/*.sql`, but a
@@ -35,6 +42,60 @@ export function rosterEntry(overrides: Partial<RosterEntry> = {}): RosterEntry {
     team_display_name: "Red Bull Racing",
     ...overrides,
   } as RosterEntry;
+}
+
+export function personalFrameRow(overrides: Partial<PersonalFrameRow> = {}): PersonalFrameRow {
+  return {
+    user_id: 1,
+    car_index: 0,
+    driver_name: "Driver One",
+    team_name: "MCLAREN_26",
+    team_display_name: "McLaren '26",
+    race_number: 4,
+    position: 3,
+    current_lap_num: 12,
+    gap_to_car_ahead_ms: 850,
+    gap_to_car_behind_ms: 1200,
+    overtake_available: true,
+    overtake_active: false,
+    actual_tyre_compound: 20,
+    visual_tyre_compound: 16,
+    tyres_age_laps: 5,
+    ahead_driver_name: "Driver Ahead",
+    ahead_team_name: "FERRARI",
+    ahead_visual_tyre_compound: 17,
+    ahead_tyres_age_laps: 8,
+    behind_driver_name: "Driver Behind",
+    behind_team_name: "MERCEDES",
+    behind_visual_tyre_compound: 18,
+    behind_tyres_age_laps: 3,
+    ...overrides,
+  } as PersonalFrameRow;
+}
+
+export function carDamageRow(overrides: Partial<CarDamageRow> = {}): CarDamageRow {
+  return {
+    tyres_wear_rl: 12.5,
+    tyres_wear_rr: 13.1,
+    tyres_wear_fl: 10.2,
+    tyres_wear_fr: 11.8,
+    ...overrides,
+  } as CarDamageRow;
+}
+
+export function tyreSetRow(overrides: Partial<TyreSetRow> = {}): TyreSetRow {
+  return {
+    lap_number: 12,
+    set_index: 0,
+    actual_compound: "C3",
+    visual_compound: "MEDIUM",
+    wear: 15,
+    life_span: 100,
+    usable_life: 80,
+    lap_delta_time_ms: 0,
+    fitted: true,
+    ...overrides,
+  } as TyreSetRow;
 }
 
 export function timelineRow(overrides: Partial<SessionTimelineRow> = {}): SessionTimelineRow {

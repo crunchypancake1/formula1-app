@@ -240,3 +240,31 @@ Manual setup, in order (later steps need values from earlier ones):
 8. Set `vars.ACCESS_TEAM_DOMAIN` to the `<team-name>.cloudflareaccess.com`
    value and redeploy `auth/` — `/authorize` validates incoming
    `redirect_uri`s against it (open-redirect guard).
+
+### Personal driver view (`/me`)
+
+`web` reads the signed-in viewer's Discord id straight out of the Access JWT
+assertion (`worker/access.ts`), rather than a second round trip through
+`auth`. That id only reaches the JWT's `custom` claim once the Discord OIDC
+provider is told to forward it:
+
+1. Zero Trust → Settings → Authentication → the Discord OIDC provider →
+   Optional configurations → **OIDC Claims**: add `discord_id` and
+   `preferred_username`. Without this, `readViewer` returns `null` for every
+   request and `/me` never shows a button.
+2. Zero Trust → Access → Applications → the application protecting
+   `f1.crunchypancake.com` → copy its **AUD tag** into `web/wrangler.jsonc`'s
+   `vars.ACCESS_POLICY_AUD`, then redeploy `web/`.
+
+`web/wrangler.jsonc`'s `vars.ACCESS_TEAM_DOMAIN` carries the `https://`
+scheme (`jwtVerify`'s `issuer` check needs it), unlike `auth`'s bare
+`<team>.cloudflareaccess.com` value used there as a redirect-URI prefix.
+
+`web` also holds a read-only `BOT_STATE` binding (same KV namespace as
+`auth`'s) so the driver-name matcher (`worker/matching.ts`) can score a
+viewer's server nickname alongside their Discord handle —
+`bot/src/discord/memberStore.ts`'s roster snapshot, only as fresh as the last
+cron tick.
+
+The match is computed fresh on every request — nothing is persisted, and
+`web` still has no write path of its own.

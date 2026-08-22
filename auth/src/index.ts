@@ -28,7 +28,7 @@ app.get("/auth/.well-known/openid-configuration", (c) => {
     id_token_signing_alg_values_supported: ["ES256"],
     scopes_supported: ["openid", "profile", "email"],
     token_endpoint_auth_methods_supported: ["client_secret_basic", "client_secret_post"],
-    claims_supported: ["sub", "preferred_username", "picture", "email"],
+    claims_supported: ["sub", "discord_id", "preferred_username", "picture", "email"],
   });
 });
 
@@ -154,6 +154,7 @@ app.get("/auth/userinfo", async (c) => {
     const claims = await verifyIdToken(c.env, token);
     return c.json({
       sub: claims.sub,
+      discord_id: claims.sub,
       preferred_username: claims.preferredUsername,
       picture: claims.picture,
       ...(claims.email !== undefined ? { email: claims.email } : {}),

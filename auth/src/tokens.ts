@@ -74,6 +74,7 @@ export async function verifyRelayState(env: AuthEnv, token: string): Promise<Rel
 function claimsToPayload(claims: AuthClaims): Record<string, unknown> {
   return {
     sub: claims.sub,
+    discord_id: claims.sub, // Access overwrites `sub`; this is what reaches the origin
     preferred_username: claims.preferredUsername,
     picture: claims.picture,
     ...(claims.email !== undefined ? { email: claims.email } : {}),

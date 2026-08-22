@@ -274,7 +274,5 @@ through Discord OAuth, checks guild membership, and mints an ES256 id token
 `@f1/db`, no `nodejs_compat`, no database — so treat it as a separate app that
 happens to live in the same repo. It does share `bot`'s `BOT_STATE` KV
 namespace binding, read-only: `auth/src/members.ts` checks membership against
-the roster `bot`'s cron tick snapshots there (`bot/src/discord/memberStore.ts`)
-rather than calling Discord itself, so `auth` holds no bot token. Membership
-checks are therefore only as fresh as the last cron tick (up to ~1 minute),
-not live.
+the roster `bot`'s cron tick snapshots there (`bot/src/discord/memberStore.ts`),
+only as fresh as the last cron tick (up to ~1 minute).

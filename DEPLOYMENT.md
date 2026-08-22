@@ -180,8 +180,7 @@ persistent to manage. Interactions arrive as ordinary HTTP requests.
 identity provider for `f1.crunchypancake.com`. It runs the Discord OAuth
 dance, checks guild membership against the roster `formula1-bot`'s cron tick
 snapshots into the shared `BOT_STATE` KV namespace (`src/members.ts`, key
-`members:v1` — no bot token or Discord API call needed here, but membership
-checks are only as fresh as the last cron tick, up to ~1 minute), then
+`members:v1`, only as fresh as the last cron tick — up to ~1 minute), then
 mints its own signed JWT (`ES256`) that Access consumes as an OIDC
 `id_token`. It never touches the database — no Hyperdrive binding.
 

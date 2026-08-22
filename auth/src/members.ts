@@ -1,9 +1,7 @@
 /**
- * Reads guild membership from the KV snapshot `bot`'s cron tick already
- * maintains (`bot/src/discord/memberStore.ts`) instead of calling Discord
- * with a bot token here too — one fewer privileged credential for a
- * public-facing gate to hold. The tradeoff is freshness: this is only as
- * current as the last cron tick (up to ~1 minute), not live.
+ * Reads guild membership from `bot`'s KV roster snapshot
+ * (`bot/src/discord/memberStore.ts`, key `members:v1`). Only as fresh as
+ * the last cron tick — up to ~1 minute.
  */
 
 const MEMBERS_KEY = "members:v1";

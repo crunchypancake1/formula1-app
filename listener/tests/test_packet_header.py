@@ -82,14 +82,14 @@ class TestValidatePacketHeader:
         with pytest.raises(PacketValidationError, match="packet_format"):
             validate_packet_header(header)
 
-    def test_validate_wrong_year(self):
+    def test_validate_accepts_game_year_25(self):
+        """packet_format 2026 with game_year 25 (F1 25: 2026 Season Pack) is valid."""
         raw = struct.pack(
             _HEADER_FORMAT,
             2026, 25, 1, 0, 1, 0, 1, 0.0, 0, 0, 0, 255,
         )
         header = unpack_packet_header(raw)
-        with pytest.raises(PacketValidationError, match="game_year"):
-            validate_packet_header(header)
+        validate_packet_header(header)
 
     def test_validate_invalid_packet_id(self):
         raw = struct.pack(

@@ -98,7 +98,7 @@ NO_PLAYER_CAR_INDEX = 255
 EXPECTED_PACKET_VERSION = 1
 
 
-def _log_format_rejection_once(header: "PacketHeader") -> None:
+def _log_format_rejection_once(header: PacketHeader) -> None:
     key = (header.session_uid, header.packet_format)
     if key in _logged_format_rejections:
         return
@@ -112,10 +112,12 @@ def _log_format_rejection_once(header: "PacketHeader") -> None:
 
 def validate_packet_header(header: PacketHeader) -> None:
     """
-    Validate that a packet header is from F1 26 (2026 Season Pack) game.
+    Validate that a packet header is from the 2026 Season Pack wire format.
 
     This filters out random network broadcasts and other UDP traffic
-    that might arrive on the same port but aren't F1 26 packets.
+    that might arrive on the same port but aren't F1 telemetry packets.
+    game_year reflects the base game (e.g. 25 for F1 25), not the wire
+    format, so only packet_format is checked here.
 
     Raises:
         PacketValidationError: If header values indicate non-F1 packet
@@ -123,10 +125,6 @@ def validate_packet_header(header: PacketHeader) -> None:
     if header.packet_format != 2026:
         _log_format_rejection_once(header)
         raise PacketValidationError(f"Invalid packet_format: {header.packet_format} (expected 2026)")
-
-    if header.game_year != 26:
-        _log_format_rejection_once(header)
-        raise PacketValidationError(f"Invalid game_year: {header.game_year} (expected 26)")
 
     if header.packet_id < 0 or header.packet_id > MAX_PACKET_ID:
         raise PacketValidationError(

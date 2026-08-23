@@ -70,11 +70,9 @@ class EventsService:
         self._logger = logger or logging.getLogger(__name__)
 
     def _resolve_driver(self, user_map: dict[int, int], vehicle_index: int) -> Optional[int]:
-        """Resolve a vehicle_index to user_id, returning None if not found."""
-        user_id = user_map.get(vehicle_index)
-        if user_id is None:
-            self._logger.warning("Cannot resolve vehicle_index %d to user_id", vehicle_index)
-        return user_id
+        """Resolve a vehicle_index to user_id. user_map holds only human drivers,
+        so a miss means an AI car — not an error — and the event is skipped."""
+        return user_map.get(vehicle_index)
 
     def handle_event_packet(self, packet, user_map: dict[int, int]):
         """

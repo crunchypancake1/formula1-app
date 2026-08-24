@@ -87,9 +87,13 @@ CREATE TABLE IF NOT EXISTS telemetry.sessions (
     temperature_units_secondary_player SMALLINT,
 
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT ck_sessions_session_uid_not_empty CHECK (length(session_uid) > 0),
-    CONSTRAINT uk_sessions_weekend_session UNIQUE (weekend_link, session_link)
+    CONSTRAINT ck_sessions_session_uid_not_empty CHECK (length(session_uid) > 0)
 );
+
+-- (weekend_link, session_link) is deliberately not unique: the game reuses both
+-- identifiers when an offline session is restarted in place, so a UNIQUE here
+-- rejects the new session_uid's INSERT and every child row then fails its FK
+-- for the rest of the session. session_uid is the identity.
 
 CREATE INDEX IF NOT EXISTS idx_sessions_track ON telemetry.sessions(track_id, session_type);
 

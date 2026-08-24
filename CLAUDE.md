@@ -34,8 +34,9 @@ no F1 25 back-compat and none is planned — don't add dual-format branching.
 ```bash
 cd listener
 source .venv/bin/activate        # venv already exists in the repo
+export POSTGRES_PASSWORD=$(grep '^POSTGRES_PASSWORD=' ../.env | cut -d= -f2-)
 
-pytest                           # full suite (~250 tests)
+pytest                           # full suite (~260 tests)
 pytest tests/test_dispatcher.py  # single file
 pytest tests/test_dispatcher.py::test_name  # single test
 pytest -k car_frame              # by keyword
@@ -43,12 +44,15 @@ pytest -k car_frame              # by keyword
 pyright                          # type check (pyrightconfig.json scopes to source dirs, excludes tests/)
 ```
 
-**The suite needs a live Postgres.** `tests/conftest.py` connects to
-`localhost:7005` (override with `POSTGRES_HOST`/`POSTGRES_PORT`/`POSTGRES_DB`)
-and everything that touches the DB *skips* silently without one — a green run
-with ~200 skips means the stack is down, not that the tests passed. Start it
-with `docker compose up -d`. Pure parser and service tests use
-`tests/mock_repo.py` and run either way.
+**The whole suite needs a live Postgres, pure tests included.**
+`tests/conftest.py` connects to `localhost:7005` (override with
+`POSTGRES_HOST`/`POSTGRES_PORT`/`POSTGRES_DB`/`POSTGRES_PASSWORD`, which
+defaults to `postgres` and is wrong for the compose stack). Its
+`cleanup_test_data` fixture is session-scoped and `autouse=True`, so when the
+connection fails *every* test skips — the parser and service tests that use
+`tests/mock_repo.py` never reach their own code. Any skip count is a red flag:
+a green run of all-skips is indistinguishable from a passing one. Start the
+stack with `docker compose up -d` and expect 0 skipped.
 
 `tests/scenario.py` and `tests/qualifying_scenario.py` build full binary packet
 sequences via `tests/packet_builder/` and drive them through the real

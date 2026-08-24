@@ -107,6 +107,16 @@ image, not your working tree. `LISTENER_IMAGE` overrides the tag.
 → per-packet-ID routing → `services/*.py` → `database/repositories/*.py` →
 Postgres.
 
+**The receive loop only enqueues.** `server.py` reads datagrams onto a bounded
+queue and a single worker thread runs `handle_packet`; parsing and its writes
+take long enough that doing them inline lets the socket's receive buffer
+overflow, and the kernel then drops whole packets rather than delaying them.
+Keep the loop free of anything that can block. For the same reason the
+connection pool sets `synchronous_commit=off` (`database/client.py`) — each
+frame is its own small transaction, so an fsync per commit is the listener's
+throughput ceiling. See `DEPLOYMENT.md` for the host `net.core.rmem_max` the
+socket size depends on.
+
 Key dispatcher behaviors, all in `dispatcher.py`:
 
 - **Session gating**: packet ID 1 (Session) establishes a session as known;

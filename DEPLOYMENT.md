@@ -51,6 +51,23 @@ Two services: `postgres` (TimescaleDB, published on host port 7005) and
 `listener` (applies `schema/run_schema.py` on startup, then captures UDP on
 port 9999).
 
+### UDP receive buffer
+
+A full grid sends ~700 datagrams a second, and anything the socket's receive
+buffer cannot hold is dropped by the kernel before the listener ever sees it —
+silently, and counted only in `/proc/net/snmp`'s `RcvbufErrors`. The listener
+asks for 16 MB, but `net.core.rmem_max` caps that at the host default of 208 KB
+and the cap is not per-container, so raise it on the host:
+
+```bash
+echo 'net.core.rmem_max = 16777216' | sudo tee /etc/sysctl.d/60-f1-listener.conf
+sudo sysctl --system
+docker compose restart listener      # the size is fixed when the socket opens
+```
+
+The startup log line reports what was actually granted, and a `Kernel dropped N
+datagram(s)` warning appears within 5s of any overflow.
+
 ### Resetting the database
 
 There is no migration path (pre-1.0 schema churn is handled by recreation,

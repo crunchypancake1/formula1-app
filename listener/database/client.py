@@ -43,6 +43,14 @@ class PostgresClient:
                 min_size=pool_min,
                 max_size=pool_max,
                 timeout=5.0,
+                # Every frame is its own small transaction, so an fsync per
+                # commit is the listener's throughput ceiling — it blocks the
+                # packet handler and the socket sheds datagrams behind it. The
+                # trade is the last fraction of a second of frames on an OS
+                # crash; the game resends its state continuously, so the next
+                # packet restores it. Passed at connect time rather than as a
+                # SET, which a rollback would revert.
+                kwargs={"options": "-c synchronous_commit=off"},
             )
 
             # Test connection

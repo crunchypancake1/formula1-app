@@ -3,10 +3,17 @@
 import dataclasses
 import json
 import logging
+import time
 from datetime import datetime, timedelta
 from typing import Any, Optional
 
 from database.client import PostgresClient
+from utils.bounded_dict import BoundedDict
+
+# A write that fails once usually fails for every packet that follows it — a
+# missing session row takes every child table down for the session's whole life.
+# The first of each kind logs in full; the rest collapse into a count this often.
+_FAILURE_SUMMARY_INTERVAL_S = 60.0
 
 
 def safe_enum_name(enum_class: type, value: int, logger: Optional[logging.Logger] = None) -> str:
@@ -25,11 +32,42 @@ class RepositoryBase:
     def __init__(self, postgres_client: PostgresClient, logger: Optional[logging.Logger] = None):
         self._client = postgres_client
         self._logger = logger or logging.getLogger(__name__)
+        # (table, exception type, sqlstate) -> [suppressed count, last logged at]
+        self._logged_failures: BoundedDict[tuple, list] = BoundedDict(50)
 
     @property
     def enabled(self) -> bool:
         """Whether database writes are enabled."""
         return self._client.enabled
+
+    def _log_write_failure(self, table_name: str, exc: Exception, batch: bool = False) -> None:
+        """Log a failed write, collapsing repeats of the same failure into a count."""
+        key = (table_name, type(exc).__name__, getattr(exc, "sqlstate", None))
+        kind = "batch write" if batch else "write"
+        now = time.monotonic()
+        state = self._logged_failures.get(key)
+
+        if state is None:
+            self._logged_failures[key] = [0, now]
+            self._logger.error(
+                f"Database {kind} failed - {table_name}: {exc}",
+                exc_info=True,
+            )
+            return
+
+        state[0] += 1
+        if now - state[1] < _FAILURE_SUMMARY_INTERVAL_S:
+            return
+
+        self._logger.error(
+            "Database %s failed - %s: %s (%d more in the last %.0fs)",
+            kind,
+            table_name,
+            exc,
+            state[0],
+            now - state[1],
+        )
+        self._logged_failures[key] = [0, now]
 
     def _execute(self, sql: str, params: Optional[tuple] = None, table_name: str = "unknown"):
         """
@@ -53,10 +91,7 @@ class RepositoryBase:
                 conn.commit()
                 return rowcount
         except Exception as e:
-            self._logger.error(
-                f"Database write failed - {table_name}: {e}",
-                exc_info=True,
-            )
+            self._log_write_failure(table_name, e)
             return 0
 
     def _delete_frames_after(
@@ -111,10 +146,7 @@ class RepositoryBase:
                     cur.executemany(sql, params_list)
                 conn.commit()
         except Exception as e:
-            self._logger.error(
-                f"Database batch write failed - {table_name}: {e}",
-                exc_info=True,
-            )
+            self._log_write_failure(table_name, e, batch=True)
 
     def _execute_many_strict(self, sql: str, params_list: list, table_name: str = "unknown"):
         """

@@ -67,5 +67,5 @@ class CarSetupsRepository(RepositoryBase):
                 conn.commit()
                 return row[0] if row else None
         except Exception as e:
-            self._logger.error("Failed to upsert car setup: %s", e, exc_info=True)
+            self._log_write_failure(self.TABLE_NAME, e)
             return None

@@ -122,10 +122,7 @@ class EntriesRepository(RepositoryBase):
                             user_id_map[name] = result[0]
                 conn.commit()
         except Exception as e:
-            self._logger.error(
-                f"Failed to resolve user IDs: {e}",
-                exc_info=True,
-            )
+            self._log_write_failure("identity.get_or_create_driver", e)
             return {}
 
         return user_id_map
